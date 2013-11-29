@@ -388,7 +388,7 @@ enum class VinverseMode {
 
 class Vinverse : public GenericVideoFilter {
 public:
-    Vinverse(PClip child, float sstr, int amnt, int uv, float scl, int opt, VinverseMode mode, IScriptEnvironment *env);
+    Vinverse(PClip child, float sstr, int amnt, int uv, float scl, VinverseMode mode, IScriptEnvironment *env);
     PVideoFrame __stdcall GetFrame(int n, IScriptEnvironment *env);
     ~Vinverse();
 
@@ -397,7 +397,6 @@ private:
     float scl_;
     int amnt_;
     int uv_;
-    int opt_;
     VinverseMode mode_;
 
     uint8_t *blur3_buffer, *blur6_buffer;
@@ -408,8 +407,8 @@ private:
 };
 
 
-Vinverse::Vinverse(PClip child, float sstr, int amnt, int uv, float scl, int opt, VinverseMode mode, IScriptEnvironment *env)
-: GenericVideoFilter(child), sstr_(sstr), amnt_(amnt), uv_(uv), scl_(scl), opt_(opt), mode_(mode), blur3_buffer(nullptr), blur6_buffer(nullptr), dlut(nullptr)
+Vinverse::Vinverse(PClip child, float sstr, int amnt, int uv, float scl, VinverseMode mode, IScriptEnvironment *env)
+: GenericVideoFilter(child), sstr_(sstr), amnt_(amnt), uv_(uv), scl_(scl), mode_(mode), blur3_buffer(nullptr), blur6_buffer(nullptr), dlut(nullptr)
 {
     if (!vi.IsPlanar()) {
         env->ThrowError("Vinverse: only planar input is supported!");
@@ -419,9 +418,6 @@ Vinverse::Vinverse(PClip child, float sstr, int amnt, int uv, float scl, int opt
     }
     if (uv < 1 || uv > 3) {
         env->ThrowError("Vinverse: uv must be set to 1, 2, or 3!");
-    }
-    if (opt < 0 || opt > 2) {
-        env->ThrowError("Vinverse: opt must be set to 0, 1, or 2!");
     }
 
     pb_pitch = (vi.width+15) / 16 * 16;
@@ -529,16 +525,16 @@ PVideoFrame __stdcall Vinverse::GetFrame(int n, IScriptEnvironment *env)
 
 
 AVSValue __cdecl Create_Vinverse(AVSValue args, void*, IScriptEnvironment* env) {
-    enum { CLIP, SSTR, AMNT, UV, SCL, OPT };
+    enum { CLIP, SSTR, AMNT, UV, SCL };
 #pragma warning(disable: 4244) //output is no longer identical when AsFloat is used instead of AsDblDef
-    return new Vinverse(args[CLIP].AsClip(),args[SSTR].AsDblDef(2.7),args[AMNT].AsInt(255), args[UV].AsInt(3),args[SCL].AsDblDef(0.25),args[OPT].AsInt(2), VinverseMode::Vinverse, env);
+    return new Vinverse(args[CLIP].AsClip(),args[SSTR].AsDblDef(2.7),args[AMNT].AsInt(255), args[UV].AsInt(3),args[SCL].AsDblDef(0.25), VinverseMode::Vinverse, env);
 #pragma warning(default: 4244)
 }
 
 AVSValue __cdecl Create_Vinverse2(AVSValue args, void*, IScriptEnvironment* env) {
-    enum { CLIP, SSTR, AMNT, UV, SCL, OPT };
+    enum { CLIP, SSTR, AMNT, UV, SCL };
 #pragma warning(disable: 4244)
-    return new Vinverse(args[CLIP].AsClip(), args[SSTR].AsDblDef(2.7), args[AMNT].AsInt(255), args[UV].AsInt(3), args[SCL].AsDblDef(0.25), args[OPT].AsInt(2), VinverseMode::Vinverse2, env);
+    return new Vinverse(args[CLIP].AsClip(), args[SSTR].AsDblDef(2.7), args[AMNT].AsInt(255), args[UV].AsInt(3), args[SCL].AsDblDef(0.25), VinverseMode::Vinverse2, env);
 #pragma warning(default: 4244)
 }
 
@@ -547,7 +543,7 @@ const AVS_Linkage *AVS_linkage = nullptr;
 extern "C" __declspec(dllexport) const char* __stdcall AvisynthPluginInit3(IScriptEnvironment* env, const AVS_Linkage* const vectors) {
     AVS_linkage = vectors;
 
-    env->AddFunction("vinverse", "c[sstr]f[amnt]i[uv]i[scl]f[opt]i", Create_Vinverse, 0);
-    env->AddFunction("vinverse2", "c[sstr]f[amnt]i[uv]i[scl]f[opt]i", Create_Vinverse2, 0);
+    env->AddFunction("vinverse", "c[sstr]f[amnt]i[uv]i[scl]f", Create_Vinverse, 0);
+    env->AddFunction("vinverse2", "c[sstr]f[amnt]i[uv]i[scl]f", Create_Vinverse2, 0);
     return "Doushimashita?";
 }
