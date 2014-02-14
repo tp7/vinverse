@@ -531,6 +531,10 @@ PVideoFrame __stdcall Vinverse::GetFrame(int n, IScriptEnvironment *env)
 
 
 AVSValue __cdecl Create_Vinverse(AVSValue args, void*, IScriptEnvironment* env) {
+    if (!env->FunctionExists("SetFilterMtMode")) {
+        env->ThrowError("Vinverse2: this plugin only works with multithreaded versions of Avisynth+!");
+    }
+
     enum { CLIP, SSTR, AMNT, UV, SCL };
 #pragma warning(disable: 4244) //output is no longer identical when AsFloat is used instead of AsDblDef
     return new Vinverse(args[CLIP].AsClip(),args[SSTR].AsDblDef(2.7),args[AMNT].AsInt(255), args[UV].AsInt(3),args[SCL].AsDblDef(0.25), VinverseMode::Vinverse, env);
@@ -538,6 +542,10 @@ AVSValue __cdecl Create_Vinverse(AVSValue args, void*, IScriptEnvironment* env) 
 }
 
 AVSValue __cdecl Create_Vinverse2(AVSValue args, void*, IScriptEnvironment* env) {
+    if (!env->FunctionExists("SetFilterMtMode")) {
+        env->ThrowError("Vinverse2: this plugin only works with multithreaded versions of Avisynth+!");
+    }
+
     enum { CLIP, SSTR, AMNT, UV, SCL };
 #pragma warning(disable: 4244)
     return new Vinverse(args[CLIP].AsClip(), args[SSTR].AsDblDef(2.7), args[AMNT].AsInt(255), args[UV].AsInt(3), args[SCL].AsDblDef(0.25), VinverseMode::Vinverse2, env);
