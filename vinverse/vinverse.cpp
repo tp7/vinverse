@@ -1,17 +1,15 @@
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
 #include <Windows.h>
-#include "avisynth.h"
+#include <avisynth.h>
+#include <avs/alignment.h>
 #include <math.h>
 #include <malloc.h>
 #include <emmintrin.h>
 #include <stdint.h>
 #include <algorithm>
 
-
-inline bool is_ptr_aligned(const void *ptr, size_t align) {
-    return (((uintptr_t)ptr & ((uintptr_t)(align-1))) == 0);
-}
+const int ALIGNMENT_DONT_CARE = 8;
 
 static void vertical_blur3_c(uint8_t* dstp, const uint8_t *srcp, int dst_pitch, int src_pitch, int width, int height) {
     for (int y=0; y<height; ++y) {
@@ -390,6 +388,11 @@ class Vinverse : public GenericVideoFilter {
 public:
     Vinverse(PClip child, float sstr, int amnt, int uv, float scl, VinverseMode mode, IScriptEnvironment *env);
     PVideoFrame __stdcall GetFrame(int n, IScriptEnvironment *env);
+
+    int __stdcall SetCacheHints(int cachehints, int frame_range) override {
+        return cachehints == CACHE_GET_MTMODE ? MT_NICE_FILTER : 0;
+    }
+
     ~Vinverse();
 
 private:
@@ -398,17 +401,17 @@ private:
     int amnt_;
     int uv_;
     VinverseMode mode_;
+    IScriptEnvironment2 *env2_unsafe; //terrible API is terrible
 
-    uint8_t *blur3_buffer, *blur6_buffer;
     int *dlut;
 
     int pb_pitch;
-    uint8_t* buffer;
 };
 
 
 Vinverse::Vinverse(PClip child, float sstr, int amnt, int uv, float scl, VinverseMode mode, IScriptEnvironment *env)
-: GenericVideoFilter(child), sstr_(sstr), amnt_(amnt), uv_(uv), scl_(scl), mode_(mode), blur3_buffer(nullptr), blur6_buffer(nullptr), dlut(nullptr)
+: GenericVideoFilter(child), sstr_(sstr), amnt_(amnt), uv_(uv), scl_(scl), mode_(mode),
+    dlut(nullptr), env2_unsafe(static_cast<IScriptEnvironment2*>(env))
 {
     if (!vi.IsPlanar()) {
         env->ThrowError("Vinverse: only planar input is supported!");
@@ -426,24 +429,12 @@ Vinverse::Vinverse(PClip child, float sstr, int amnt, int uv, float scl, Vinvers
     bool sse2 = false;// env->GetCPUFlags() & CPUF_SSE2;
 #pragma warning(default: 4800)
 
-    size_t pbuf_size = vi.height * pb_pitch;
-    size_t dlut_size = sse2 ? 0 : 512 * 512 * sizeof(int);
-
-    buffer = reinterpret_cast<uint8_t*>(_aligned_malloc(pbuf_size*2 + dlut_size, 16));
-
-    if (buffer == nullptr) {
-        env->ThrowError("Vinverse:  malloc failure!");
-    }
-
-    blur3_buffer = buffer;
-    blur6_buffer = blur3_buffer + pbuf_size;
-
     if (!sse2) {
-        dlut = reinterpret_cast<int*>(blur6_buffer + pbuf_size);
+        dlut = (int*)env2_unsafe->Allocate(512*512*sizeof(int), ALIGNMENT_DONT_CARE, AVS_NORMAL_ALLOC);
 
-        for (int x=-255; x<=255; ++x)
+        for (int x = -255; x<=255; ++x)
         {
-            for (int y=-255; y<=255; ++y)
+            for (int y = -255; y<=255; ++y)
             {
                 float y2 = y*sstr;
                 float da = fabs(float(x)) < fabs(y2) ? x : y2;
@@ -454,11 +445,23 @@ Vinverse::Vinverse(PClip child, float sstr, int amnt, int uv, float scl, Vinvers
 }
 
 Vinverse::~Vinverse() {
-    _aligned_free(buffer);
+    env2_unsafe->Free(dlut);
 }
 
 PVideoFrame __stdcall Vinverse::GetFrame(int n, IScriptEnvironment *env)
 {
+    size_t pbuf_size = vi.height * pb_pitch;
+    auto env2 = static_cast<IScriptEnvironment2*>(env);
+    
+    auto buffer = (uint8_t*)env2->Allocate(pbuf_size*2, 16, AVS_POOLED_ALLOC);
+
+    if (buffer == nullptr) {
+        env->ThrowError("Vinverse: failed to allocate memory!");
+    }
+
+    auto blur3_buffer = buffer;
+    auto blur6_buffer = blur3_buffer + pbuf_size;
+
     PVideoFrame src = child->GetFrame(n, env);
     PVideoFrame dst = env->NewVideoFrame(vi);
 
@@ -484,7 +487,7 @@ PVideoFrame __stdcall Vinverse::GetFrame(int n, IScriptEnvironment *env)
         }
         
         if ((env->GetCPUFlags() & CPUF_SSE2)) {
-            if (!is_ptr_aligned(srcp, 16)) {
+            if (!IsPtrAligned(srcp, 16)) {
                 env->ThrowError("Invalid memory alignment. For God's sake, stop using unaligned crop!");
             }
             if (mode_ == VinverseMode::Vinverse) {
@@ -520,6 +523,9 @@ PVideoFrame __stdcall Vinverse::GetFrame(int n, IScriptEnvironment *env)
             }
         }
     }
+
+    env2->Free(buffer);
+
     return dst;
 }
 
