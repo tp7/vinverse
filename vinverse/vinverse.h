@@ -26,6 +26,7 @@ private:
     float scl_;
     int amnt_;
     int uv_;
+    int opt_;
     VinverseMode mode_;
 
     uint8_t* blur3_buffer, * blur6_buffer;

@@ -3,10 +3,10 @@
 
 void vertical_blur3_sse2(uint8_t* dstp, const uint8_t* srcp, int dst_pitch, int src_pitch, int width, int height)
 {
-    int mod16_width = (width + 15) / 16 * 16;
+    int mod16_width = (width + 15) & ~15;
 
-    auto zero = _mm_setzero_si128();
-    auto two = _mm_set1_epi16(2);
+    auto zero = _mm_setzero_si128(); zero_si128();
+    auto two = Vec8us(2);
 
     for (int y = 0; y < height; ++y)
     {
@@ -15,35 +15,34 @@ void vertical_blur3_sse2(uint8_t* dstp, const uint8_t* srcp, int dst_pitch, int 
 
         for (int x = 0; x < mod16_width; x += 16)
         {
-            auto p = _mm_load_si128(reinterpret_cast<const __m128i*>(srcpp + x));
-            auto c = _mm_load_si128(reinterpret_cast<const __m128i*>(srcp + x));
-            auto n = _mm_load_si128(reinterpret_cast<const __m128i*>(srcpn + x));
+            auto p = Vec16uc().load(srcpp + x);
+            auto c = Vec16uc().load(srcp + x);
+            auto n = Vec16uc().load(srcpn + x);
 
-            auto p_lo = _mm_unpacklo_epi8(p, zero);
-            auto p_hi = _mm_unpackhi_epi8(p, zero);
-            auto c_lo = _mm_unpacklo_epi8(c, zero);
-            auto c_hi = _mm_unpackhi_epi8(c, zero);
-            auto n_lo = _mm_unpacklo_epi8(n, zero);
-            auto n_hi = _mm_unpackhi_epi8(n, zero);
+            auto p_lo = extend_low(p);
+            auto p_hi = extend_high(p);
+            auto c_lo = extend_low(c);
+            auto c_hi = extend_high(c);
+            auto n_lo = extend_low(n);
+            auto n_hi = extend_high(n);
 
-            auto acc_lo = _mm_add_epi16(c_lo, p_lo);
-            auto acc_hi = _mm_add_epi16(c_hi, p_hi);
+            auto acc_lo = c_lo + p_lo;
+            auto acc_hi = c_hi + p_hi;
 
-            acc_lo = _mm_add_epi16(acc_lo, c_lo);
-            acc_hi = _mm_add_epi16(acc_hi, c_hi);
+            acc_lo = acc_lo + c_lo;
+            acc_hi = acc_hi + c_hi;
 
-            acc_lo = _mm_add_epi16(acc_lo, n_lo);
-            acc_hi = _mm_add_epi16(acc_hi, n_hi);
+            acc_lo = acc_lo + n_lo;
+            acc_hi = acc_hi + n_hi;
 
-            acc_lo = _mm_add_epi16(acc_lo, two);
-            acc_hi = _mm_add_epi16(acc_hi, two);
+            acc_lo = acc_lo + two;
+            acc_hi = acc_hi + two;
 
-            acc_lo = _mm_srli_epi16(acc_lo, 2);
-            acc_hi = _mm_srli_epi16(acc_hi, 2);
+            acc_lo = acc_lo >> 2;
+            acc_hi = acc_hi >> 2;
 
-            auto dst = _mm_packus_epi16(acc_lo, acc_hi);
-
-            _mm_store_si128(reinterpret_cast<__m128i*>(dstp + x), dst);
+            auto dst = compress_saturated(acc_lo, acc_hi);
+            dst.store_a(dstp + x);
         }
 
         srcp += src_pitch;
@@ -53,11 +52,11 @@ void vertical_blur3_sse2(uint8_t* dstp, const uint8_t* srcp, int dst_pitch, int 
 
 void vertical_blur5_sse2(uint8_t* dstp, const uint8_t* srcp, int dst_pitch, int src_pitch, int width, int height)
 {
-    int mod16_width = (width + 15) / 16 * 16;
+    int mod16_width = (width + 15) & ~15;
 
-    auto zero = _mm_setzero_si128();
-    auto six = _mm_set1_epi16(6);
-    auto eight = _mm_set1_epi16(8);
+    auto zero = zero_si128();
+    auto six = Vec8us(6);
+    auto eight = Vec8us(8);
 
     for (int y = 0; y < height; ++y)
     {
@@ -68,49 +67,49 @@ void vertical_blur5_sse2(uint8_t* dstp, const uint8_t* srcp, int dst_pitch, int 
 
         for (int x = 0; x < mod16_width; x += 16)
         {
-            auto p2 = _mm_load_si128(reinterpret_cast<const __m128i*>(srcppp + x));
-            auto p1 = _mm_load_si128(reinterpret_cast<const __m128i*>(srcpp + x));
-            auto c = _mm_load_si128(reinterpret_cast<const __m128i*>(srcp + x));
-            auto n1 = _mm_load_si128(reinterpret_cast<const __m128i*>(srcpn + x));
-            auto n2 = _mm_load_si128(reinterpret_cast<const __m128i*>(srcpnn + x));
+            auto p2 = Vec16uc().load(srcppp + x);
+            auto p1 = Vec16uc().load(srcpp + x);
+            auto c = Vec16uc().load(srcp + x);
+            auto n1 = Vec16uc().load(srcpn + x);
+            auto n2 = Vec16uc().load(srcpnn + x);
 
-            auto p2_lo = _mm_unpacklo_epi8(p2, zero);
-            auto p2_hi = _mm_unpackhi_epi8(p2, zero);
-            auto p1_lo = _mm_unpacklo_epi8(p1, zero);
-            auto p1_hi = _mm_unpackhi_epi8(p1, zero);
-            auto c_lo = _mm_unpacklo_epi8(c, zero);
-            auto c_hi = _mm_unpackhi_epi8(c, zero);
-            auto n1_lo = _mm_unpacklo_epi8(n1, zero);
-            auto n1_hi = _mm_unpackhi_epi8(n1, zero);
-            auto n2_lo = _mm_unpacklo_epi8(n2, zero);
-            auto n2_hi = _mm_unpackhi_epi8(n2, zero);
+            auto p2_lo = extend_low(p2);
+            auto p2_hi = extend_high(p2);
+            auto p1_lo = extend_low(p1);
+            auto p1_hi = extend_high(p1);
+            auto c_lo = extend_low(c);
+            auto c_hi = extend_high(c);
+            auto n1_lo = extend_low(n1);
+            auto n1_hi = extend_high(n1);
+            auto n2_lo = extend_low(n2);
+            auto n2_hi = extend_high(n2);
 
-            auto acc_lo = _mm_mullo_epi16(c_lo, six);
-            auto acc_hi = _mm_mullo_epi16(c_hi, six);
+            auto acc_lo = c_lo * six;
+            auto acc_hi = c_hi * six;
 
-            auto t_lo = _mm_add_epi16(p1_lo, n1_lo);
-            auto t_hi = _mm_add_epi16(p1_hi, n1_hi);
+            auto t_lo = p1_lo + n1_lo;
+            auto t_hi = p1_hi + n1_hi;
 
-            acc_lo = _mm_add_epi16(acc_lo, n2_lo);
-            acc_hi = _mm_add_epi16(acc_hi, n2_hi);
+            acc_lo = acc_lo + n2_lo;
+            acc_hi = acc_hi + n2_hi;
 
-            t_lo = _mm_slli_epi16(t_lo, 2);
-            t_hi = _mm_slli_epi16(t_hi, 2);
+            t_lo = t_lo << 2;
+            t_hi = t_hi << 2;
 
-            t_lo = _mm_add_epi16(t_lo, p2_lo);
-            t_hi = _mm_add_epi16(t_hi, p2_hi);
+            t_lo = t_lo + p2_lo;
+            t_hi = t_hi + p2_hi;
 
-            acc_lo = _mm_add_epi16(acc_lo, eight);
-            acc_hi = _mm_add_epi16(acc_hi, eight);
+            acc_lo = acc_lo + eight;
+            acc_hi = acc_hi + eight;
 
-            acc_lo = _mm_add_epi16(acc_lo, t_lo);
-            acc_hi = _mm_add_epi16(acc_hi, t_hi);
+            acc_lo = acc_lo + t_lo;
+            acc_hi = acc_hi + t_hi;
 
-            acc_lo = _mm_srli_epi16(acc_lo, 4);
-            acc_hi = _mm_srli_epi16(acc_hi, 4);
+            acc_lo = acc_lo >> 4;
+            acc_hi = acc_hi >> 4;
 
-            auto dst = _mm_packus_epi16(acc_lo, acc_hi);
-            _mm_store_si128(reinterpret_cast<__m128i*>(dstp + x), dst);
+            auto dst = compress_saturated(acc_lo, acc_hi);
+            dst.store_a(dstp + x);
         }
 
         srcp += src_pitch;
@@ -120,44 +119,29 @@ void vertical_blur5_sse2(uint8_t* dstp, const uint8_t* srcp, int dst_pitch, int 
 
 static void mt_makediff_sse2(uint8_t* dstp, const uint8_t* c1p, const uint8_t* c2p, int dst_pitch, int c1_pitch, int c2_pitch, int width, int height)
 {
-    int mod16_width = (width + 15) / 16 * 16;
+    int mod16_width = (width + 15) & ~15;
 
-    __m128i v128 = _mm_set1_epi32(0x80808080);
+    auto v128 = Vec16uc(0x80808080);
+
     for (int y = 0; y < height; ++y)
     {
         for (int x = 0; x < mod16_width; x += 16)
         {
-            __m128i c1 = _mm_load_si128(reinterpret_cast<const __m128i*>(c1p + x));
-            __m128i c2 = _mm_load_si128(reinterpret_cast<const __m128i*>(c2p + x));
+            auto c1 = Vec16uc().load(c1p + x);
+            auto c2 = Vec16uc().load(c2p + x);
 
-            c1 = _mm_sub_epi8(c1, v128);
-            c2 = _mm_sub_epi8(c2, v128);
+            c1 = c1 - v128;
+            c2 = c2 - v128;
 
-            __m128i diff = _mm_subs_epi8(c1, c2);
-            diff = _mm_add_epi8(diff, v128);
-
-            _mm_store_si128(reinterpret_cast<__m128i*>(dstp + x), diff);
+            auto diff = c1 - c2;
+            diff = diff + v128;
+            diff.store_a(dstp + x);
         }
+
         dstp += dst_pitch;
         c1p += c1_pitch;
         c2p += c2_pitch;
     }
-}
-
-//mask ? a : b
-static AVS_FORCEINLINE __m128i blend_si128(__m128i const& mask, __m128i const& desired, __m128i const& otherwise)
-{
-    //return _mm_blendv_ps(otherwise, desired, mask);
-    auto andop = _mm_and_si128(mask, desired);
-    auto andnop = _mm_andnot_si128(mask, otherwise);
-    return _mm_or_si128(andop, andnop);
-}
-
-static AVS_FORCEINLINE __m128i abs_epi16(const __m128i& src, const __m128i& zero)
-{
-    __m128i is_negative = _mm_cmplt_epi16(src, zero);
-    __m128i reversed = _mm_subs_epi16(zero, src);
-    return blend_si128(is_negative, reversed, src);
 }
 
 void vertical_sbr_sse2(uint8_t* dstp, uint8_t* tempp, const uint8_t* srcp, int dst_pitch, int temp_pitch, int src_pitch, int width, int height)
@@ -166,37 +150,33 @@ void vertical_sbr_sse2(uint8_t* dstp, uint8_t* tempp, const uint8_t* srcp, int d
     mt_makediff_sse2(dstp, srcp, tempp, dst_pitch, src_pitch, temp_pitch, width, height); //dst = rg11D
     vertical_blur3_sse2(tempp, dstp, temp_pitch, dst_pitch, width, height); //temp = rg11D.vblur()
 
-    int mod8_width = (width + 7) / 8 * 8;
+    int mod8_width = (width + 7) & ~7;
 
-    __m128i zero = _mm_setzero_si128();
-    __m128i v128 = _mm_set1_epi16(128);
+    auto zero = zero_si128();
+    auto v128 = Vec8us(128);
 
     for (int y = 0; y < height; ++y)
     {
         for (int x = 0; x < mod8_width; x += 8)
         {
-            __m128i dst = _mm_loadl_epi64(reinterpret_cast<const __m128i*>(dstp + x));
-            __m128i temp = _mm_loadl_epi64(reinterpret_cast<const __m128i*>(tempp + x));
-            __m128i src = _mm_loadl_epi64(reinterpret_cast<const __m128i*>(srcp + x));
+            auto dst = extend_low(Vec16uc().loadl(dstp + x));
+            auto temp = extend_low(Vec16uc().loadl(tempp + x));
+            auto src = extend_low(Vec16uc().loadl(srcp + x));
 
-            dst = _mm_unpacklo_epi8(dst, zero);
-            temp = _mm_unpacklo_epi8(temp, zero);
-            src = _mm_unpacklo_epi8(src, zero);
+            auto t = dst - temp;
+            auto t2 = dst - v128;
 
-            __m128i t = _mm_subs_epi16(dst, temp);
-            __m128i t2 = _mm_subs_epi16(dst, v128);
+            auto nochange_mask = Vec8s(t * t2) < zero;
 
-            __m128i nochange_mask = _mm_cmplt_epi16(_mm_mullo_epi16(t, t2), zero);
+            auto t_mask = abs(t) < abs(t2);
+            auto desired = src - t;
+            auto otherwise = (src - dst) + v128;
+            auto result = select(nochange_mask, src, select(t_mask, desired, otherwise));
 
-            __m128i t_mask = _mm_cmplt_epi16(abs_epi16(t, zero), abs_epi16(t2, zero));
-            __m128i desired = _mm_subs_epi16(src, t);
-            __m128i otherwise = _mm_add_epi16(_mm_subs_epi16(src, dst), v128);
-            __m128i result = blend_si128(nochange_mask, src, blend_si128(t_mask, desired, otherwise));
-
-            result = _mm_packus_epi16(result, zero);
-
-            _mm_storel_epi64(reinterpret_cast<__m128i*>(dstp + x), result);
+            result = compress_saturated(result, zero);
+            result.storel(dstp + x);
         }
+
         dstp += dst_pitch;
         srcp += src_pitch;
         tempp += temp_pitch;
@@ -220,67 +200,61 @@ static AVS_FORCEINLINE __m128 blend_ps(__m128 const& mask, __m128 const& desired
 
 void finalize_plane_sse2(uint8_t* dstp, const uint8_t* srcp, const uint8_t* pb3, const uint8_t* pb6, float sstr, float scl, int src_pitch, int dst_pitch, int pb_pitch, int width, int height, int amnt)
 {
-    int mod8_width = (width + 7) / 8 * 8;
+    int mod8_width = (width + 7) & ~7;
 
     auto zero = _mm_setzero_si128();
-    auto sstr_vector = _mm_set_ps1(sstr);
-    auto scl_vector = _mm_set_ps1(scl);
-    auto amnt_vector = _mm_set1_epi16(amnt);
+    auto sstr_vector = Vec4f(sstr);
+    auto scl_vector = Vec4f(scl);
+    auto amnt_vector = Vec8s(amnt);
 
     for (int y = 0; y < height; ++y)
     {
         for (int x = 0; x < mod8_width; x += 8)
         {
-            __m128i b3 = _mm_loadl_epi64(reinterpret_cast<const __m128i*>(pb3 + x));
-            __m128i b6 = _mm_loadl_epi64(reinterpret_cast<const __m128i*>(pb6 + x));
-            __m128i src = _mm_loadl_epi64(reinterpret_cast<const __m128i*>(srcp + x));
+            auto b3 = extend_low(Vec16uc().loadl(pb3 + x));
+            auto b6 = extend_low(Vec16uc().loadl(pb6 + x));
+            auto src = extend_low(Vec16uc().loadl(srcp + x));
 
-            b3 = _mm_unpacklo_epi8(b3, zero);
-            b6 = _mm_unpacklo_epi8(b6, zero);
-            src = _mm_unpacklo_epi8(src, zero);
+            auto d1i = Vec8s(src - b3);
+            auto d2i = Vec8s(b3 - b6);
 
-            auto d1i = _mm_subs_epi16(src, b3);
-            auto d1i_sign = _mm_cmplt_epi16(d1i, zero);
+            auto d1_lo = to_float(extend_low(d1i));
+            auto d1_hi = to_float(extend_high(d1i));
 
-            auto d2i = _mm_subs_epi16(b3, b6);
-            auto d2i_sign = _mm_cmplt_epi16(d2i, zero);
+            auto d2_lo = to_float(extend_low(d2i));
+            auto d2_hi = to_float(extend_high(d2i));
 
-            auto d1_lo = _mm_cvtepi32_ps(_mm_unpacklo_epi16(d1i, d1i_sign));
-            auto d1_hi = _mm_cvtepi32_ps(_mm_unpackhi_epi16(d1i, d1i_sign));
+            auto t_lo = d2_lo * sstr_vector;
+            auto t_hi = d2_hi * sstr_vector;
 
-            auto d2_lo = _mm_cvtepi32_ps(_mm_unpacklo_epi16(d2i, d2i_sign));
-            auto d2_hi = _mm_cvtepi32_ps(_mm_unpackhi_epi16(d2i, d2i_sign));
+            auto da_mask_lo = abs(d1_lo) < abs(t_lo);
+            auto da_mask_hi = abs(d1_hi) < abs(t_hi);
 
-            auto t_lo = _mm_mul_ps(d2_lo, sstr_vector);
-            auto t_hi = _mm_mul_ps(d2_hi, sstr_vector);
+            auto da_lo = select(da_mask_lo, d1_lo, t_lo);
+            auto da_hi = select(da_mask_hi, d1_hi, t_hi);
 
-            auto da_mask_lo = _mm_cmplt_ps(abs_ps(d1_lo), abs_ps(t_lo));
-            auto da_mask_hi = _mm_cmplt_ps(abs_ps(d1_hi), abs_ps(t_hi));
+            auto desired_lo = da_lo * scl_vector;
+            auto desired_hi = da_hi * scl_vector;
 
-            auto da_lo = blend_ps(da_mask_lo, d1_lo, t_lo);
-            auto da_hi = blend_ps(da_mask_hi, d1_hi, t_hi);
+            auto fin_mask_lo = (d1_lo * t_lo) < 0.0f;
+            auto fin_mask_hi = (d1_hi * t_hi) < 0.0f;
 
-            auto desired_lo = _mm_mul_ps(da_lo, scl_vector);
-            auto desired_hi = _mm_mul_ps(da_hi, scl_vector);
+            auto add_lo = truncatei(select(fin_mask_lo, desired_lo, da_lo));
+            auto add_hi = truncatei(select(fin_mask_hi, desired_hi, da_hi));
 
-            auto fin_mask_lo = _mm_cmplt_ps(_mm_mul_ps(d1_lo, t_lo), _mm_castsi128_ps(zero));
-            auto fin_mask_hi = _mm_cmplt_ps(_mm_mul_ps(d1_hi, t_hi), _mm_castsi128_ps(zero));
+            auto add = compress_saturated(add_lo, add_hi);
+            auto df = b3 + Vec8us(add);
 
-            auto add_lo = _mm_cvttps_epi32(blend_ps(fin_mask_lo, desired_lo, da_lo));
-            auto add_hi = _mm_cvttps_epi32(blend_ps(fin_mask_hi, desired_hi, da_hi));
+            auto minm = src - amnt_vector;
+            auto maxf = src + amnt_vector;
 
-            auto add = _mm_packs_epi32(add_lo, add_hi);
-            auto df = _mm_add_epi16(b3, add);
+            df = max(df, minm);
+            df = min(df, maxf);
 
-            auto minm = _mm_subs_epi16(src, amnt_vector);
-            auto maxf = _mm_adds_epi16(src, amnt_vector);
-
-            df = _mm_max_epi16(df, minm);
-            df = _mm_min_epi16(df, maxf);
-
-            auto result = _mm_packus_epi16(df, zero);
-            _mm_storel_epi64(reinterpret_cast<__m128i*>(dstp + x), result);
+            auto result = compress_saturated(df, zero);
+            result.storel(dstp + x);
         }
+
         srcp += src_pitch;
         pb3 += pb_pitch;
         pb6 += pb_pitch;

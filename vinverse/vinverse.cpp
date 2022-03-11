@@ -144,7 +144,7 @@ static void finalize_plane_c(uint8_t* dstp, const uint8_t* srcp, const uint8_t* 
 }
 
 Vinverse::Vinverse(PClip child, float sstr, int amnt, int uv, float scl, int opt, VinverseMode mode, IScriptEnvironment* env)
-    : GenericVideoFilter(child), sstr_(sstr), amnt_(amnt), uv_(uv), scl_(scl), mode_(mode), blur3_buffer(nullptr), blur6_buffer(nullptr), dlut(nullptr)
+    : GenericVideoFilter(child), sstr_(sstr), amnt_(amnt), uv_(uv), scl_(scl), opt_(opt), mode_(mode), blur3_buffer(nullptr), blur6_buffer(nullptr), dlut(nullptr)
 {
     if (!vi.IsPlanar())
         env->ThrowError("Vinverse: only planar input is supported!");
@@ -152,18 +152,18 @@ Vinverse::Vinverse(PClip child, float sstr, int amnt, int uv, float scl, int opt
         env->ThrowError("Vinverse: amnt must be greater than 0 and less than or equal to 255!");
     if (uv < 1 || uv > 3)
         env->ThrowError("Vinverse: uv must be set to 1, 2, or 3!");
-    if (opt < -1 || opt > 1)
+    if (opt_ < -1 || opt_ > 1)
         env->ThrowError("Vinverse: opt must be between -1..1.");
 
     pb_pitch = (vi.width + 15) & ~15;
 
     sse2 = !!(env->GetCPUFlags() & CPUF_SSE2);
 
-    if (!sse2 && opt == 1)
+    if (!sse2 && opt_ == 1)
         env->ThrowError("Vinverse: opt=1 requires SSE2.");
 
     size_t pbuf_size = vi.height * pb_pitch;
-    size_t dlut_size = sse2 ? 0 : 512 * 512 * sizeof(int);
+    size_t dlut_size = 512 * 512 * sizeof(int);
 
     buffer = reinterpret_cast<uint8_t*>(aligned_malloc(pbuf_size * 2 + dlut_size, 16));
 
@@ -173,29 +173,29 @@ Vinverse::Vinverse(PClip child, float sstr, int amnt, int uv, float scl, int opt
     blur3_buffer = buffer;
     blur6_buffer = blur3_buffer + pbuf_size;
 
-    if ((!sse2 && opt < 0) || opt == 0)
+    dlut = reinterpret_cast<int*>(blur6_buffer + pbuf_size);
+
+    for (int x = -255; x <= 255; ++x)
     {
-        dlut = reinterpret_cast<int*>(blur6_buffer + pbuf_size);
-
-        for (int x = -255; x <= 255; ++x)
+        for (int y = -255; y <= 255; ++y)
         {
-            for (int y = -255; y <= 255; ++y)
-            {
-                const float y2 = y * sstr;
-                const float da = fabs(static_cast<float>(x)) < fabs(y2) ? x : y2;
-                dlut[((x + 255) << 9) + (y + 255)] = static_cast<float>(x) * y2 < 0.0 ? static_cast<int>(da * scl) : static_cast<int>(da);
-            }
+            const float y2 = y * sstr;
+            const float da = fabs(static_cast<float>(x)) < fabs(y2) ? x : y2;
+            dlut[((x + 255) << 9) + (y + 255)] = static_cast<float>(x) * y2 < 0.0 ? static_cast<int>(da * scl) : static_cast<int>(da);
         }
+    }
 
+    if ((sse2 && opt_ < 0) || opt_ == 1)
+    {
+        blur3 = vertical_blur3_sse2;
+        blur5 = vertical_blur5_sse2;
+        sbr = vertical_sbr_sse2;
+    }
+    else
+    {
         blur3 = vertical_blur3_c;
         blur5 = vertical_blur5_c;
         sbr = vertical_sbr_c;
-    }
-    else if ((sse2 && opt < 0) || opt == 1)
-    {
-        blur3 = vertical_blur3_sse2;
-        blur5 = vertical_blur5_c;
-        sbr = vertical_sbr_sse2;
     }
 
     v8 = true;
@@ -253,7 +253,7 @@ PVideoFrame __stdcall Vinverse::GetFrame(int n, IScriptEnvironment* env)
             blur3(blur6_buffer, blur3_buffer, pb_pitch, pb_pitch, width, height);
         }
 
-        if (sse2)
+        if ((sse2 && opt_ < 0) || opt_ == 1)
             finalize_plane_sse2(dstp, srcp, blur3_buffer, blur6_buffer, sstr_, scl_, src_pitch, dst_pitch, pb_pitch, width, height, amnt_);
         else
             fin_plane(dstp, srcp, blur3_buffer, blur6_buffer, dlut, dst_pitch, src_pitch, pb_pitch, width, height, amnt_);
