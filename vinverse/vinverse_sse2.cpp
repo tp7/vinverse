@@ -183,21 +183,6 @@ void vertical_sbr_sse2(uint8_t* dstp, uint8_t* tempp, const uint8_t* srcp, int d
     }
 }
 
-AVS_FORCEINLINE __m128 abs_ps(const __m128& x)
-{
-    static const __m128 sign_mask = _mm_set_ps1(-0.0f); // -0.f = 1 << 31
-    return _mm_andnot_ps(sign_mask, x);
-}
-
-//mask ? a : b
-static AVS_FORCEINLINE __m128 blend_ps(__m128 const& mask, __m128 const& desired, __m128 const& otherwise)
-{
-    //return _mm_blendv_ps(otherwise, desired, mask);
-    auto andop = _mm_and_ps(mask, desired);
-    auto andnop = _mm_andnot_ps(mask, otherwise);
-    return _mm_or_ps(andop, andnop);
-}
-
 void finalize_plane_sse2(uint8_t* dstp, const uint8_t* srcp, const uint8_t* pb3, const uint8_t* pb6, float sstr, float scl, int src_pitch, int dst_pitch, int pb_pitch, int width, int height, int amnt)
 {
     int mod8_width = (width + 7) & ~7;
