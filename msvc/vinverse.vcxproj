@@ -134,6 +134,14 @@
   <ItemGroup>
     <ClCompile Include="..\vinverse\vcl2\instrset_detect.cpp" />
     <ClCompile Include="..\vinverse\vinverse.cpp" />
+    <ClCompile Include="..\vinverse\vinverse_avx2.cpp">
+      <EnableEnhancedInstructionSet Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">AdvancedVectorExtensions2</EnableEnhancedInstructionSet>
+      <EnableEnhancedInstructionSet Condition="'$(Configuration)|$(Platform)'=='Release|x64'">AdvancedVectorExtensions2</EnableEnhancedInstructionSet>
+    </ClCompile>
+    <ClCompile Include="..\vinverse\vinverse_avx512.cpp">
+      <EnableEnhancedInstructionSet Condition="'$(Configuration)|$(Platform)'=='Release|x64'">AdvancedVectorExtensions512</EnableEnhancedInstructionSet>
+      <EnableEnhancedInstructionSet Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">AdvancedVectorExtensions512</EnableEnhancedInstructionSet>
+    </ClCompile>
     <ClCompile Include="..\vinverse\vinverse_sse2.cpp" />
   </ItemGroup>
   <ItemGroup>

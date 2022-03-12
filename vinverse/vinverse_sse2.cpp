@@ -5,7 +5,7 @@ void vertical_blur3_sse2(uint8_t* dstp, const uint8_t* srcp, int dst_pitch, int 
 {
     int mod16_width = (width + 15) & ~15;
 
-    auto zero = _mm_setzero_si128(); zero_si128();
+    auto zero = zero_si128();
     auto two = Vec8us(2);
 
     for (int y = 0; y < height; ++y)

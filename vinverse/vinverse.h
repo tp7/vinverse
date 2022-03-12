@@ -35,6 +35,8 @@ private:
     int pb_pitch;
     uint8_t* buffer;
 
+    bool avx512;
+    bool avx2;
     bool sse2;
     bool v8;
 
@@ -48,3 +50,13 @@ void vertical_blur3_sse2(uint8_t* dstp, const uint8_t* srcp, int dst_pitch, int 
 void vertical_blur5_sse2(uint8_t* dstp, const uint8_t* srcp, int dst_pitch, int src_pitch, int width, int height);
 void vertical_sbr_sse2(uint8_t* dstp, uint8_t* tempp, const uint8_t* srcp, int dst_pitch, int temp_pitch, int src_pitch, int width, int height);
 void finalize_plane_sse2(uint8_t* dstp, const uint8_t* srcp, const uint8_t* pb3, const uint8_t* pb6, float sstr, float scl, int src_pitch, int dst_pitch, int pb_pitch, int width, int height, int amnt);
+
+void vertical_blur3_avx2(uint8_t* dstp, const uint8_t* srcp, int dst_pitch, int src_pitch, int width, int height);
+void vertical_blur5_avx2(uint8_t* dstp, const uint8_t* srcp, int dst_pitch, int src_pitch, int width, int height);
+void vertical_sbr_avx2(uint8_t* dstp, uint8_t* tempp, const uint8_t* srcp, int dst_pitch, int temp_pitch, int src_pitch, int width, int height);
+void finalize_plane_avx2(uint8_t* dstp, const uint8_t* srcp, const uint8_t* pb3, const uint8_t* pb6, float sstr, float scl, int src_pitch, int dst_pitch, int pb_pitch, int width, int height, int amnt);
+
+void vertical_blur3_avx512(uint8_t* dstp, const uint8_t* srcp, int dst_pitch, int src_pitch, int width, int height);
+void vertical_blur5_avx512(uint8_t* dstp, const uint8_t* srcp, int dst_pitch, int src_pitch, int width, int height);
+void vertical_sbr_avx512(uint8_t* dstp, uint8_t* tempp, const uint8_t* srcp, int dst_pitch, int temp_pitch, int src_pitch, int width, int height);
+void finalize_plane_avx512(uint8_t* dstp, const uint8_t* srcp, const uint8_t* pb3, const uint8_t* pb6, float sstr, float scl, int src_pitch, int dst_pitch, int pb_pitch, int width, int height, int amnt);

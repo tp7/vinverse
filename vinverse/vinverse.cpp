@@ -152,20 +152,61 @@ Vinverse::Vinverse(PClip child, float sstr, int amnt, int uv, float scl, int opt
         env->ThrowError("Vinverse: amnt must be greater than 0 and less than or equal to 255!");
     if (uv < 1 || uv > 3)
         env->ThrowError("Vinverse: uv must be set to 1, 2, or 3!");
-    if (opt_ < -1 || opt_ > 1)
-        env->ThrowError("Vinverse: opt must be between -1..1.");
+    if (opt_ < -1 || opt_ > 3)
+        env->ThrowError("Vinverse: opt must be between -1..3.");    
 
-    pb_pitch = (vi.width + 15) & ~15;
-
+    avx512 = !!(env->GetCPUFlags() & CPUF_AVX512F);
+    avx2 = !!(env->GetCPUFlags() & CPUF_AVX2);
     sse2 = !!(env->GetCPUFlags() & CPUF_SSE2);
 
+    if (!avx512 && opt_ == 3)
+        env->ThrowError("Vinverse: opt=2 requires AVX512F.");
+    if (!avx2 && opt_ == 2)
+        env->ThrowError("Vinverse: opt=2 requires AVX2.");
     if (!sse2 && opt_ == 1)
         env->ThrowError("Vinverse: opt=1 requires SSE2.");
+
+    int align = 16;
+
+    if ((avx512 && opt_ < 0) || opt_ == 3)
+    {
+        pb_pitch = (vi.width + 63) & ~63;
+        align = 64;
+
+        blur3 = vertical_blur3_avx512;
+        blur5 = vertical_blur5_avx512;
+        sbr = vertical_sbr_avx512;
+    }
+    else if ((avx2 && opt_ < 0) || opt_ == 2)
+    {
+        pb_pitch = (vi.width + 31) & ~31;
+        align = 32;
+
+        blur3 = vertical_blur3_avx2;
+        blur5 = vertical_blur5_avx2;
+        sbr = vertical_sbr_avx2;
+    }
+    else if ((sse2 && opt_ < 0) || opt_ == 1)
+    {
+        pb_pitch = (vi.width + 15) & ~15;
+
+        blur3 = vertical_blur3_sse2;
+        blur5 = vertical_blur5_sse2;
+        sbr = vertical_sbr_sse2;
+    }
+    else
+    {
+        pb_pitch = (vi.width + 15) & ~15;
+
+        blur3 = vertical_blur3_c;
+        blur5 = vertical_blur5_c;
+        sbr = vertical_sbr_c;
+    }
 
     size_t pbuf_size = vi.height * pb_pitch;
     size_t dlut_size = 512 * 512 * sizeof(int);
 
-    buffer = reinterpret_cast<uint8_t*>(aligned_malloc(pbuf_size * 2 + dlut_size, 16));
+    buffer = reinterpret_cast<uint8_t*>(aligned_malloc(pbuf_size * 2 + dlut_size, align));
 
     if (buffer == nullptr)
         env->ThrowError("Vinverse:  malloc failure!");
@@ -183,19 +224,6 @@ Vinverse::Vinverse(PClip child, float sstr, int amnt, int uv, float scl, int opt
             const float da = fabs(static_cast<float>(x)) < fabs(y2) ? x : y2;
             dlut[((x + 255) << 9) + (y + 255)] = static_cast<float>(x) * y2 < 0.0 ? static_cast<int>(da * scl) : static_cast<int>(da);
         }
-    }
-
-    if ((sse2 && opt_ < 0) || opt_ == 1)
-    {
-        blur3 = vertical_blur3_sse2;
-        blur5 = vertical_blur5_sse2;
-        sbr = vertical_sbr_sse2;
-    }
-    else
-    {
-        blur3 = vertical_blur3_c;
-        blur5 = vertical_blur5_c;
-        sbr = vertical_sbr_c;
     }
 
     v8 = true;
@@ -253,7 +281,11 @@ PVideoFrame __stdcall Vinverse::GetFrame(int n, IScriptEnvironment* env)
             blur3(blur6_buffer, blur3_buffer, pb_pitch, pb_pitch, width, height);
         }
 
-        if ((sse2 && opt_ < 0) || opt_ == 1)
+        if ((avx512 && opt_ < 0) || opt_ == 3)
+            finalize_plane_avx512(dstp, srcp, blur3_buffer, blur6_buffer, sstr_, scl_, src_pitch, dst_pitch, pb_pitch, width, height, amnt_);
+        else if ((avx2 && opt_ < 0) || opt_ == 2)
+            finalize_plane_avx2(dstp, srcp, blur3_buffer, blur6_buffer, sstr_, scl_, src_pitch, dst_pitch, pb_pitch, width, height, amnt_);
+        else if ((sse2 && opt_ < 0) || opt_ == 1)
             finalize_plane_sse2(dstp, srcp, blur3_buffer, blur6_buffer, sstr_, scl_, src_pitch, dst_pitch, pb_pitch, width, height, amnt_);
         else
             fin_plane(dstp, srcp, blur3_buffer, blur6_buffer, dlut, dst_pitch, src_pitch, pb_pitch, width, height, amnt_);

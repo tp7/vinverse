@@ -24,6 +24,12 @@
     <ClCompile Include="..\vinverse\vinverse_sse2.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="..\vinverse\vinverse_avx2.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\vinverse\vinverse_avx512.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\vinverse\vcl2\instrset.h">
