@@ -1,11 +1,13 @@
 #include "vinverse.h"
 #include "VCL2/vectorclass.h"
 
-void vertical_blur3_avx2(uint8_t* dstp, const uint8_t* srcp, int dst_pitch, int src_pitch, int width, int height)
+void vertical_blur3_avx2_8(void* __restrict dstp_, const void* srcp_, int dst_pitch, int src_pitch, int width, int height) noexcept
 {
+    const uint8_t* srcp = reinterpret_cast<const uint8_t*>(srcp_);
+    uint8_t* __restrict dstp = reinterpret_cast<uint8_t*>(dstp_);
+
     int mod32_width = (width + 31) & ~31;
 
-    auto zero = zero_si256();
     auto two = Vec16us(2);
 
     for (int y = 0; y < height; ++y)
@@ -42,7 +44,7 @@ void vertical_blur3_avx2(uint8_t* dstp, const uint8_t* srcp, int dst_pitch, int 
             acc_hi = acc_hi >> 2;
 
             auto dst = compress_saturated(acc_lo, acc_hi);
-            dst.store_a(dstp + x);
+            dst.store(dstp + x);
         }
 
         srcp += src_pitch;
@@ -50,11 +52,13 @@ void vertical_blur3_avx2(uint8_t* dstp, const uint8_t* srcp, int dst_pitch, int 
     }
 }
 
-void vertical_blur5_avx2(uint8_t* dstp, const uint8_t* srcp, int dst_pitch, int src_pitch, int width, int height)
+void vertical_blur5_avx2_8(void* __restrict dstp_, const void* srcp_, int dst_pitch, int src_pitch, int width, int height) noexcept
 {
+    const uint8_t* srcp = reinterpret_cast<const uint8_t*>(srcp_);
+    uint8_t* __restrict dstp = reinterpret_cast<uint8_t*>(dstp_);
+
     int mod32_width = (width + 31) & ~31;
 
-    auto zero = zero_si256();
     auto six = Vec16us(6);
     auto eight = Vec16us(8);
 
@@ -109,7 +113,7 @@ void vertical_blur5_avx2(uint8_t* dstp, const uint8_t* srcp, int dst_pitch, int 
             acc_hi = acc_hi >> 4;
 
             auto dst = compress_saturated(acc_lo, acc_hi);
-            dst.store_a(dstp + x);
+            dst.store(dstp + x);
         }
 
         srcp += src_pitch;
@@ -117,8 +121,12 @@ void vertical_blur5_avx2(uint8_t* dstp, const uint8_t* srcp, int dst_pitch, int 
     }
 }
 
-static void mt_makediff_avx2(uint8_t* dstp, const uint8_t* c1p, const uint8_t* c2p, int dst_pitch, int c1_pitch, int c2_pitch, int width, int height)
+static void mt_makediff_avx2_8(void* __restrict dstp_, const void* c1p_, const void* c2p_, int dst_pitch, int c1_pitch, int c2_pitch, int width, int height) noexcept
 {
+    const uint8_t* c1p = reinterpret_cast<const uint8_t*>(c1p_);
+    const uint8_t* c2p = reinterpret_cast<const uint8_t*>(c2p_);
+    uint8_t* __restrict dstp = reinterpret_cast<uint8_t*>(dstp_);
+
     int mod32_width = (width + 31) & ~31;
 
     auto v128 = Vec32uc(0x80808080);
@@ -135,7 +143,7 @@ static void mt_makediff_avx2(uint8_t* dstp, const uint8_t* c1p, const uint8_t* c
 
             auto diff = c1 - c2;
             diff = diff + v128;
-            diff.store_a(dstp + x);
+            diff.store(dstp + x);
         }
 
         dstp += dst_pitch;
@@ -144,15 +152,19 @@ static void mt_makediff_avx2(uint8_t* dstp, const uint8_t* c1p, const uint8_t* c
     }
 }
 
-void vertical_sbr_avx2(uint8_t* dstp, uint8_t* tempp, const uint8_t* srcp, int dst_pitch, int temp_pitch, int src_pitch, int width, int height)
+void vertical_sbr_avx2_8(void* __restrict dstp_, void* __restrict tempp_, const void* srcp_, int dst_pitch, int temp_pitch, int src_pitch, int width, int height) noexcept
 {
-    vertical_blur3_avx2(tempp, srcp, temp_pitch, src_pitch, width, height); //temp = rg11
-    mt_makediff_avx2(dstp, srcp, tempp, dst_pitch, src_pitch, temp_pitch, width, height); //dst = rg11D
-    vertical_blur3_avx2(tempp, dstp, temp_pitch, dst_pitch, width, height); //temp = rg11D.vblur()
+    vertical_blur3_avx2_8(tempp_, srcp_, temp_pitch, src_pitch, width, height); //temp = rg11
+    mt_makediff_avx2_8(dstp_, srcp_, tempp_, dst_pitch, src_pitch, temp_pitch, width, height); //dst = rg11D
+    vertical_blur3_avx2_8(tempp_, dstp_, temp_pitch, dst_pitch, width, height); //temp = rg11D.vblur()
+
+    const uint8_t* srcp = reinterpret_cast<const uint8_t*>(srcp_);
+    uint8_t* __restrict tempp = reinterpret_cast<uint8_t*>(tempp_);
+    uint8_t* __restrict dstp = reinterpret_cast<uint8_t*>(dstp_);
 
     int mod32_width = (width + 31) & ~31;
 
-    auto zero = zero_si256();
+    Vec16s zero = zero_si256();
     auto v128 = Vec16us(128);
 
     for (int y = 0; y < height; ++y)
@@ -197,11 +209,15 @@ void vertical_sbr_avx2(uint8_t* dstp, uint8_t* tempp, const uint8_t* srcp, int d
     }
 }
 
-void finalize_plane_avx2(uint8_t* dstp, const uint8_t* srcp, const uint8_t* pb3, const uint8_t* pb6, float sstr, float scl, int src_pitch, int dst_pitch, int pb_pitch, int width, int height, int amnt)
+void finalize_plane_avx2_8(void* __restrict dstp_, const void* srcp_, const void* pb3_, const void* pb6_, float sstr, float scl, int src_pitch, int dst_pitch, int pb_pitch, int width, int height, int amnt) noexcept
 {
+    const uint8_t* srcp = reinterpret_cast<const uint8_t*>(srcp_);
+    const uint8_t* pb3 = reinterpret_cast<const uint8_t*>(pb3_);
+    const uint8_t* pb6 = reinterpret_cast<const uint8_t*>(pb6_);
+    uint8_t* __restrict dstp = reinterpret_cast<uint8_t*>(dstp_);
+
     int mod32_width = (width + 31) & ~31;
 
-    auto zero = zero_si256();
     auto sstr_vector = Vec8f(sstr);
     auto scl_vector = Vec8f(scl);
     auto amnt_vector = Vec16s(amnt);
@@ -291,6 +307,313 @@ void finalize_plane_avx2(uint8_t* dstp, const uint8_t* srcp, const uint8_t* pb3,
             df_h = min(df_h, maxf_h);
             //
             auto result = compress_saturated(df_l, df_h);
+            result.store(dstp + x);
+        }
+
+        srcp += src_pitch;
+        pb3 += pb_pitch;
+        pb6 += pb_pitch;
+        dstp += dst_pitch;
+    }
+}
+
+template <int c_>
+void vertical_blur3_avx2_16(void* __restrict dstp_, const void* srcp_, int dst_pitch, int src_pitch, int width, int height) noexcept
+{
+    const uint16_t* srcp = reinterpret_cast<const uint16_t*>(srcp_);
+    uint16_t* __restrict dstp = reinterpret_cast<uint16_t*>(dstp_);
+
+    int mod32_width = (width + 31) & ~31;
+
+    auto two = Vec8ui(c_);
+
+    for (int y = 0; y < height; ++y)
+    {
+        const uint16_t* srcpp = y == 0 ? srcp + src_pitch : srcp - src_pitch;
+        const uint16_t* srcpn = y == height - 1 ? srcp - src_pitch : srcp + src_pitch;
+
+        for (int x = 0; x < mod32_width; x += 16)
+        {
+            auto p = Vec16us().load(srcpp + x);
+            auto c = Vec16us().load(srcp + x);
+            auto n = Vec16us().load(srcpn + x);
+
+            auto p_lo = extend_low(p);
+            auto p_hi = extend_high(p);
+            auto c_lo = extend_low(c);
+            auto c_hi = extend_high(c);
+            auto n_lo = extend_low(n);
+            auto n_hi = extend_high(n);
+
+            auto acc_lo = c_lo + p_lo;
+            auto acc_hi = c_hi + p_hi;
+
+            acc_lo = acc_lo + c_lo;
+            acc_hi = acc_hi + c_hi;
+
+            acc_lo = acc_lo + n_lo;
+            acc_hi = acc_hi + n_hi;
+
+            acc_lo = acc_lo + two;
+            acc_hi = acc_hi + two;
+
+            acc_lo = acc_lo >> 2;
+            acc_hi = acc_hi >> 2;
+
+            auto dst = compress_saturated(acc_lo, acc_hi);
+            dst.store(dstp + x);
+        }
+
+        srcp += src_pitch;
+        dstp += dst_pitch;
+    }
+}
+
+template void vertical_blur3_avx2_16<8>(void* __restrict dstp, const void* srcp, int dst_pitch, int src_pitch, int width, int height) noexcept;
+template void vertical_blur3_avx2_16<32>(void* __restrict dstp, const void* srcp, int dst_pitch, int src_pitch, int width, int height) noexcept;
+template void vertical_blur3_avx2_16<128>(void* __restrict dstp, const void* srcp, int dst_pitch, int src_pitch, int width, int height) noexcept;
+template void vertical_blur3_avx2_16<512>(void* __restrict dstp, const void* srcp, int dst_pitch, int src_pitch, int width, int height) noexcept;
+
+template <int c_>
+void vertical_blur5_avx2_16(void* __restrict dstp_, const void* srcp_, int dst_pitch, int src_pitch, int width, int height) noexcept
+{
+    const uint16_t* srcp = reinterpret_cast<const uint16_t*>(srcp_);
+    uint16_t* __restrict dstp = reinterpret_cast<uint16_t*>(dstp_);
+
+    int mod32_width = (width + 31) & ~31;
+
+    auto six = Vec8ui(6);
+    auto eight = Vec8ui(c_);
+
+    for (int y = 0; y < height; ++y)
+    {
+        const uint16_t* srcppp = y < 2 ? srcp + src_pitch * 2 : srcp - src_pitch * 2;
+        const uint16_t* srcpp = y == 0 ? srcp + src_pitch : srcp - src_pitch;
+        const uint16_t* srcpn = y == height - 1 ? srcp - src_pitch : srcp + src_pitch;
+        const uint16_t* srcpnn = y > height - 3 ? srcp - src_pitch * 2 : srcp + src_pitch * 2;
+
+        for (int x = 0; x < mod32_width; x += 16)
+        {
+            auto p2 = Vec16us().load(srcppp + x);
+            auto p1 = Vec16us().load(srcpp + x);
+            auto c = Vec16us().load(srcp + x);
+            auto n1 = Vec16us().load(srcpn + x);
+            auto n2 = Vec16us().load(srcpnn + x);
+
+            auto p2_lo = extend_low(p2);
+            auto p2_hi = extend_high(p2);
+            auto p1_lo = extend_low(p1);
+            auto p1_hi = extend_high(p1);
+            auto c_lo = extend_low(c);
+            auto c_hi = extend_high(c);
+            auto n1_lo = extend_low(n1);
+            auto n1_hi = extend_high(n1);
+            auto n2_lo = extend_low(n2);
+            auto n2_hi = extend_high(n2);
+
+            auto acc_lo = c_lo * six;
+            auto acc_hi = c_hi * six;
+
+            auto t_lo = p1_lo + n1_lo;
+            auto t_hi = p1_hi + n1_hi;
+
+            acc_lo = acc_lo + n2_lo;
+            acc_hi = acc_hi + n2_hi;
+
+            t_lo = t_lo << 2;
+            t_hi = t_hi << 2;
+
+            t_lo = t_lo + p2_lo;
+            t_hi = t_hi + p2_hi;
+
+            acc_lo = acc_lo + eight;
+            acc_hi = acc_hi + eight;
+
+            acc_lo = acc_lo + t_lo;
+            acc_hi = acc_hi + t_hi;
+
+            acc_lo = acc_lo >> 4;
+            acc_hi = acc_hi >> 4;
+
+            auto dst = compress_saturated(acc_lo, acc_hi);
+            dst.store(dstp + x);
+        }
+
+        srcp += src_pitch;
+        dstp += dst_pitch;
+    }
+}
+
+template void vertical_blur5_avx2_16<32>(void* __restrict dstp, const void* srcp, int dst_pitch, int src_pitch, int width, int height) noexcept;
+template void vertical_blur5_avx2_16<128>(void* __restrict dstp, const void* srcp, int dst_pitch, int src_pitch, int width, int height) noexcept;
+template void vertical_blur5_avx2_16<512>(void* __restrict dstp, const void* srcp, int dst_pitch, int src_pitch, int width, int height) noexcept;
+template void vertical_blur5_avx2_16<2048>(void* __restrict dstp, const void* srcp, int dst_pitch, int src_pitch, int width, int height) noexcept;
+
+template <uint32_t u>
+static void mt_makediff_avx2_16(void* __restrict dstp_, const void* c1p_, const void* c2p_, int dst_pitch, int c1_pitch, int c2_pitch, int width, int height) noexcept
+{
+    const uint16_t* c1p = reinterpret_cast<const uint16_t*>(c1p_);
+    const uint16_t* c2p = reinterpret_cast<const uint16_t*>(c2p_);
+    uint16_t* __restrict dstp = reinterpret_cast<uint16_t*>(dstp_);
+
+    int mod32_width = (width + 31) & ~31;
+
+    auto v128 = Vec16us(u);
+
+    for (int y = 0; y < height; ++y)
+    {
+        for (int x = 0; x < mod32_width; x += 16)
+        {
+            auto c1 = Vec16us().load(c1p + x);
+            auto c2 = Vec16us().load(c2p + x);
+
+            c1 = c1 - v128;
+            c2 = c2 - v128;
+
+            auto diff = c1 - c2;
+            diff = diff + v128;
+            diff.store(dstp + x);
+        }
+
+        dstp += dst_pitch;
+        c1p += c1_pitch;
+        c2p += c2_pitch;
+    }
+}
+
+template <int c, int h, uint32_t u>
+void vertical_sbr_avx2_16(void* __restrict dstp_, void* __restrict tempp_, const void* srcp_, int dst_pitch, int temp_pitch, int src_pitch, int width, int height) noexcept
+{
+    vertical_blur3_avx2_16<c>(tempp_, srcp_, temp_pitch, src_pitch, width, height); //temp = rg11
+    mt_makediff_avx2_16<u>(dstp_, srcp_, tempp_, dst_pitch, src_pitch, temp_pitch, width, height); //dst = rg11D
+    vertical_blur3_avx2_16<c>(tempp_, dstp_, temp_pitch, dst_pitch, width, height); //temp = rg11D.vblur()
+
+    const uint16_t* srcp = reinterpret_cast<const uint16_t*>(srcp_);
+    uint16_t* __restrict tempp = reinterpret_cast<uint16_t*>(tempp_);
+    uint16_t* __restrict dstp = reinterpret_cast<uint16_t*>(dstp_);
+
+    int mod32_width = (width + 31) & ~31;
+
+    Vec8i zero = zero_si256();
+    auto v128 = Vec8ui(h);
+
+    for (int y = 0; y < height; ++y)
+    {
+        for (int x = 0; x < mod32_width; x += 16)
+        {
+            auto dst_lo = extend_low(Vec16us().load(dstp + x));
+            auto temp_lo = extend_low(Vec16us().load(tempp + x));
+            auto src_lo = extend_low(Vec16us().load(srcp + x));
+
+            auto t_lo = dst_lo - temp_lo;
+            auto t2_lo = dst_lo - v128;
+
+            auto nochange_mask_lo = Vec8i(t_lo * t2_lo) < zero;
+
+            auto t_mask_lo = abs(t_lo) < abs(t2_lo);
+            auto desired_lo = src_lo - t_lo;
+            auto otherwise_lo = (src_lo - dst_lo) + v128;
+            auto result_lo = select(nochange_mask_lo, src_lo, select(t_mask_lo, desired_lo, otherwise_lo));
+            //
+            auto dst_hi = extend_high(Vec16us().load(dstp + x));
+            auto temp_hi = extend_high(Vec16us().load(tempp + x));
+            auto src_hi = extend_high(Vec16us().load(srcp + x));
+
+            auto t_hi = dst_hi - temp_hi;
+            auto t2_hi = dst_hi - v128;
+
+            auto nochange_mask_hi = Vec8i(t_hi * t2_hi) < zero;
+
+            auto t_mask_hi = abs(t_hi) < abs(t2_hi);
+            auto desired_hi = src_hi - t_hi;
+            auto otherwise_hi = (src_hi - dst_hi) + v128;
+            auto result_hi = select(nochange_mask_hi, src_hi, select(t_mask_hi, desired_hi, otherwise_hi));
+            // 
+            auto result = compress_saturated(result_lo, result_hi);
+            result.store(dstp + x);
+        }
+
+        dstp += dst_pitch;
+        srcp += src_pitch;
+        tempp += temp_pitch;
+    }
+}
+
+template void vertical_sbr_avx2_16<8, 512, 0x200200>(void* __restrict dstp, void* __restrict tempp, const void* srcp, int dst_pitch, int temp_pitch, int src_pitch, int width, int height) noexcept;
+template void vertical_sbr_avx2_16<32, 2048, 0x800800>(void* __restrict dstp, void* __restrict tempp, const void* srcp, int dst_pitch, int temp_pitch, int src_pitch, int width, int height) noexcept;
+template void vertical_sbr_avx2_16<128, 8192, 0x20002000>(void* __restrict dstp, void* __restrict tempp, const void* srcp, int dst_pitch, int temp_pitch, int src_pitch, int width, int height) noexcept;
+template void vertical_sbr_avx2_16<512, 32768, 0x80008000>(void* __restrict dstp, void* __restrict tempp, const void* srcp, int dst_pitch, int temp_pitch, int src_pitch, int width, int height) noexcept;
+
+void finalize_plane_avx2_16(void* __restrict dstp_, const void* srcp_, const void* pb3_, const void* pb6_, float sstr, float scl, int src_pitch, int dst_pitch, int pb_pitch, int width, int height, int amnt) noexcept
+{
+    const uint16_t* srcp = reinterpret_cast<const uint16_t*>(srcp_);
+    const uint16_t* pb3 = reinterpret_cast<const uint16_t*>(pb3_);
+    const uint16_t* pb6 = reinterpret_cast<const uint16_t*>(pb6_);
+    uint16_t* __restrict dstp = reinterpret_cast<uint16_t*>(dstp_);
+
+    int mod32_width = (width + 31) & ~31;
+
+    auto sstr_vector = Vec8f(sstr);
+    auto scl_vector = Vec8f(scl);
+    auto amnt_vector = Vec8i(amnt);
+
+    for (int y = 0; y < height; ++y)
+    {
+        for (int x = 0; x < mod32_width; x += 16)
+        {
+            auto b3_lo = extend_low(Vec16us().load(pb3 + x));
+            auto b6_lo = extend_low(Vec16us().load(pb6 + x));
+            auto src_lo = extend_low(Vec16us().load(srcp + x));
+
+            auto d1i_lo = Vec8i(src_lo - b3_lo);
+            auto d2i_lo = Vec8i(b3_lo - b6_lo);
+
+            auto d1_lo = to_float(d1i_lo);
+            auto d2_lo = to_float(d2i_lo);
+
+            auto t_lo = d2_lo * sstr_vector;
+            auto da_mask_lo = abs(d1_lo) < abs(t_lo);
+            auto da_lo = select(da_mask_lo, d1_lo, t_lo);
+
+            auto desired_lo = da_lo * scl_vector;
+            auto fin_mask_lo = (d1_lo * t_lo) < 0.0f;
+
+            auto add_lo = truncatei(select(fin_mask_lo, desired_lo, da_lo));
+            auto df_l = b3_lo + Vec8i(add_lo);
+
+            auto minm_l = src_lo - amnt_vector;
+            auto maxf_l = src_lo + amnt_vector;
+
+            df_l = max(df_l, minm_l);
+            df_l = min(df_l, maxf_l);
+            //
+            auto b3_hi = extend_high(Vec16us().load(pb3 + x));
+            auto b6_hi = extend_high(Vec16us().load(pb6 + x));
+            auto src_hi = extend_high(Vec16us().load(srcp + x));
+
+            auto d1i_hi = Vec8i(src_hi - b3_hi);
+            auto d2i_hi = Vec8i(b3_hi - b6_hi);
+
+            auto d1_hi = to_float(d1i_hi);
+            auto d2_hi = to_float(d2i_hi);
+
+            auto t_hi = d2_hi * sstr_vector;
+            auto da_mask_hi = abs(d1_hi) < abs(t_hi);
+            auto da_hi = select(da_mask_hi, d1_hi, t_hi);
+
+            auto desired_hi = da_hi * scl_vector;
+            auto fin_mask_hi = (d1_hi * t_hi) < 0.0f;
+
+            auto add_hi = truncatei(select(fin_mask_hi, desired_hi, da_hi));
+            auto df_h = b3_hi + Vec8i(add_hi);
+
+            auto minm_h = src_hi - amnt_vector;
+            auto maxf_h = src_hi + amnt_vector;
+
+            df_h = max(df_h, minm_h);
+            df_h = min(df_h, maxf_h);
+            //
+            auto result = compress_saturated_s2u(df_l, df_h);
             result.store(dstp + x);
         }
 

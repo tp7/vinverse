@@ -8,55 +8,77 @@ enum class VinverseMode
     Vinverse2
 };
 
+template <typename T>
 class Vinverse : public GenericVideoFilter
 {
 public:
     Vinverse(PClip child, float sstr, int amnt, int uv, float scl, int opt, VinverseMode mode, IScriptEnvironment* env);
-    PVideoFrame __stdcall GetFrame(int n, IScriptEnvironment* env);
+    PVideoFrame __stdcall GetFrame(int n, IScriptEnvironment* env) override;
 
     int __stdcall SetCacheHints(int cachehints, int frame_range) override
     {
-        return cachehints == CACHE_GET_MTMODE ? MT_NICE_FILTER : 0;
+        return cachehints == CACHE_GET_MTMODE ? MT_MULTI_INSTANCE : 0;
     }
 
     ~Vinverse();
 
 private:
     float sstr_;
-    float scl_;
     int amnt_;
     int uv_;
+    float scl_;
     int opt_;
     VinverseMode mode_;
 
-    uint8_t* blur3_buffer, * blur6_buffer;
-    int* dlut;
+    T* blur3_buffer;
+    T* blur6_buffer;
 
     int pb_pitch;
-    uint8_t* buffer;
+    T* buffer;
 
     bool avx512;
     bool avx2;
     bool sse2;
     bool v8;
 
-    void(*blur3)(uint8_t* dstp, const uint8_t* srcp, int dst_pitch, int src_pitch, int width, int height);
-    void(*blur5)(uint8_t* dstp, const uint8_t* srcp, int dst_pitch, int src_pitch, int width, int height);
-    void(*sbr)(uint8_t* dstp, uint8_t* tempp, const uint8_t* srcp, int dst_pitch, int temp_pitch, int src_pitch, int width, int height);
-    void(*fin_plane)(uint8_t* dstp, const uint8_t* srcp, const uint8_t* pb3, const uint8_t* pb6, const int* dlut, int dst_pitch, int src_pitch, int pb_pitch, int width, int height, int amnt);
+    void(*blur3)(void* dstp, const void* srcp, int dst_pitch, int src_pitch, int width, int height) noexcept;
+    void(*blur5)(void* dstp, const void* srcp, int dst_pitch, int src_pitch, int width, int height) noexcept;
+    void(*sbr)(void* dstp, void* tempp, const void* srcp, int dst_pitch, int temp_pitch, int src_pitch, int width, int height) noexcept;
+    void(*fin_plane)(void* dstp, const void* srcp, const void* pb3, const void* pb6, float sstr, float scl, int src_pitch, int dst_pitch, int pb_pitch, int width, int height, int amnt) noexcept;
 };
 
-void vertical_blur3_sse2(uint8_t* dstp, const uint8_t* srcp, int dst_pitch, int src_pitch, int width, int height);
-void vertical_blur5_sse2(uint8_t* dstp, const uint8_t* srcp, int dst_pitch, int src_pitch, int width, int height);
-void vertical_sbr_sse2(uint8_t* dstp, uint8_t* tempp, const uint8_t* srcp, int dst_pitch, int temp_pitch, int src_pitch, int width, int height);
-void finalize_plane_sse2(uint8_t* dstp, const uint8_t* srcp, const uint8_t* pb3, const uint8_t* pb6, float sstr, float scl, int src_pitch, int dst_pitch, int pb_pitch, int width, int height, int amnt);
+void vertical_blur3_sse2_8(void* __restrict dstp, const void* srcp, int dst_pitch, int src_pitch, int width, int height) noexcept;
+void vertical_blur5_sse2_8(void* __restrict dstp, const void* srcp, int dst_pitch, int src_pitch, int width, int height) noexcept;
+void vertical_sbr_sse2_8(void* __restrict dstp, void* __restrict tempp, const void* srcp, int dst_pitch, int temp_pitch, int src_pitch, int width, int height) noexcept;
+void finalize_plane_sse2_8(void* __restrict dstp, const void* srcp, const void* pb3, const void* pb6, float sstr, float scl, int src_pitch, int dst_pitch, int pb_pitch, int width, int height, int amnt) noexcept;
+template <int c>
+void vertical_blur3_sse2_16(void* __restrict dstp, const void* srcp, int dst_pitch, int src_pitch, int width, int height) noexcept;
+template <int c>
+void vertical_blur5_sse2_16(void* __restrict dstp, const void* srcp, int dst_pitch, int src_pitch, int width, int height) noexcept;
+template <int c, int h, uint32_t u>
+void vertical_sbr_sse2_16(void* __restrict dstp, void* __restrict tempp, const void* srcp, int dst_pitch, int temp_pitch, int src_pitch, int width, int height) noexcept;
+void finalize_plane_sse2_16(void* __restrict dstp, const void* srcp, const void* pb3, const void* pb6, float sstr, float scl, int src_pitch, int dst_pitch, int pb_pitch, int width, int height, int amnt) noexcept;
 
-void vertical_blur3_avx2(uint8_t* dstp, const uint8_t* srcp, int dst_pitch, int src_pitch, int width, int height);
-void vertical_blur5_avx2(uint8_t* dstp, const uint8_t* srcp, int dst_pitch, int src_pitch, int width, int height);
-void vertical_sbr_avx2(uint8_t* dstp, uint8_t* tempp, const uint8_t* srcp, int dst_pitch, int temp_pitch, int src_pitch, int width, int height);
-void finalize_plane_avx2(uint8_t* dstp, const uint8_t* srcp, const uint8_t* pb3, const uint8_t* pb6, float sstr, float scl, int src_pitch, int dst_pitch, int pb_pitch, int width, int height, int amnt);
+void vertical_blur3_avx2_8(void* __restrict dstp, const void* srcp, int dst_pitch, int src_pitch, int width, int height) noexcept;
+void vertical_blur5_avx2_8(void* __restrict dstp, const void* srcp, int dst_pitch, int src_pitch, int width, int height) noexcept;
+void vertical_sbr_avx2_8(void* __restrict dstp, void* __restrict tempp, const void* srcp, int dst_pitch, int temp_pitch, int src_pitch, int width, int height) noexcept;
+void finalize_plane_avx2_8(void* __restrict dstp, const void* srcp, const void* pb3, const void* pb6, float sstr, float scl, int src_pitch, int dst_pitch, int pb_pitch, int width, int height, int amnt) noexcept;
+template <int c>
+void vertical_blur3_avx2_16(void* __restrict dstp, const void* srcp, int dst_pitch, int src_pitch, int width, int height) noexcept;
+template <int c>
+void vertical_blur5_avx2_16(void* __restrict dstp, const void* srcp, int dst_pitch, int src_pitch, int width, int height) noexcept;
+template <int c, int h, uint32_t u>
+void vertical_sbr_avx2_16(void* __restrict dstp, void* __restrict tempp, const void* srcp, int dst_pitch, int temp_pitch, int src_pitch, int width, int height) noexcept;
+void finalize_plane_avx2_16(void* __restrict dstp, const void* srcp, const void* pb3, const void* pb6, float sstr, float scl, int src_pitch, int dst_pitch, int pb_pitch, int width, int height, int amnt) noexcept;
 
-void vertical_blur3_avx512(uint8_t* dstp, const uint8_t* srcp, int dst_pitch, int src_pitch, int width, int height);
-void vertical_blur5_avx512(uint8_t* dstp, const uint8_t* srcp, int dst_pitch, int src_pitch, int width, int height);
-void vertical_sbr_avx512(uint8_t* dstp, uint8_t* tempp, const uint8_t* srcp, int dst_pitch, int temp_pitch, int src_pitch, int width, int height);
-void finalize_plane_avx512(uint8_t* dstp, const uint8_t* srcp, const uint8_t* pb3, const uint8_t* pb6, float sstr, float scl, int src_pitch, int dst_pitch, int pb_pitch, int width, int height, int amnt);
+void vertical_blur3_avx512_8(void* __restrict dstp, const void* srcp, int dst_pitch, int src_pitch, int width, int height) noexcept;
+void vertical_blur5_avx512_8(void* __restrict dstp, const void* srcp, int dst_pitch, int src_pitch, int width, int height) noexcept;
+void vertical_sbr_avx512_8(void* __restrict dstp, void* __restrict tempp, const void* srcp, int dst_pitch, int temp_pitch, int src_pitch, int width, int height) noexcept;
+void finalize_plane_avx512_8(void* __restrict dstp, const void* srcp, const void* pb3, const void* pb6, float sstr, float scl, int src_pitch, int dst_pitch, int pb_pitch, int width, int height, int amnt) noexcept;
+template <int c>
+void vertical_blur3_avx512_16(void* __restrict dstp, const void* srcp, int dst_pitch, int src_pitch, int width, int height) noexcept;
+template <int c>
+void vertical_blur5_avx512_16(void* __restrict dstp, const void* srcp, int dst_pitch, int src_pitch, int width, int height) noexcept;
+template <int c, int h, uint32_t u>
+void vertical_sbr_avx512_16(void* __restrict dstp, void* __restrict tempp, const void* srcp, int dst_pitch, int temp_pitch, int src_pitch, int width, int height) noexcept;
+void finalize_plane_avx512_16(void* __restrict dstp, const void* srcp, const void* pb3, const void* pb6, float sstr, float scl, int src_pitch, int dst_pitch, int pb_pitch, int width, int height, int amnt) noexcept;
