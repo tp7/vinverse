@@ -209,7 +209,8 @@ void vertical_sbr_avx512_8(void* __restrict dstp_, void* __restrict tempp_, cons
     }
 }
 
-void finalize_plane_avx512_8(void* __restrict dstp_, const void* srcp_, const void* pb3_, const void* pb6_, float sstr, float scl, int src_pitch, int dst_pitch, int pb_pitch, int width, int height, int amnt) noexcept
+template <bool eclip>
+void finalize_plane_avx512_8(void* __restrict dstp_, const void* srcp_, const void* pb3_, const void* pb6_, float sstr, float scl, int src_pitch, int dst_pitch, int pb_pitch, int clip2_pitch, int width, int height, int amnt) noexcept
 {
     const uint8_t* srcp = reinterpret_cast<const uint8_t*>(srcp_);
     const uint8_t* pb3 = reinterpret_cast<const uint8_t*>(pb3_);
@@ -222,100 +223,196 @@ void finalize_plane_avx512_8(void* __restrict dstp_, const void* srcp_, const vo
     auto scl_vector = Vec16f(scl);
     auto amnt_vector = Vec32s(amnt);
 
-    for (int y = 0; y < height; ++y)
+    if (eclip)
     {
-        for (int x = 0; x < mod64_width; x += 64)
+        for (int y = 0; y < height; ++y)
         {
-            auto b3_lo = extend_low(Vec64uc().load(pb3 + x));
-            auto b6_lo = extend_low(Vec64uc().load(pb6 + x));
-            auto src_lo = extend_low(Vec64uc().load(srcp + x));
+            for (int x = 0; x < mod64_width; x += 64)
+            {
+                auto b3_lo = extend_low(Vec64uc().load(pb3 + x));
+                auto b6_lo = extend_low(Vec64uc().load(pb6 + x));
+                auto src_lo = extend_low(Vec64uc().load(srcp + x));
 
-            auto d1i_lo = Vec32s(src_lo - b3_lo);
-            auto d2i_lo = Vec32s(b3_lo - b6_lo);
+                auto d1i_lo = Vec32s(src_lo - b3_lo);
+                auto d2i_lo = Vec32s(src_lo - b6_lo);
 
-            auto d1_lo = to_float(extend_low(d1i_lo));
-            auto d1_lo1 = to_float(extend_high(d1i_lo));
+                auto d1_lo = to_float(extend_low(d1i_lo));
+                auto d1_lo1 = to_float(extend_high(d1i_lo));
 
-            auto d2_lo = to_float(extend_low(d2i_lo));
-            auto d2_lo1 = to_float(extend_high(d2i_lo));
+                auto d2_lo = to_float(extend_low(d2i_lo));
+                auto d2_lo1 = to_float(extend_high(d2i_lo));
 
-            auto t_lo = d2_lo * sstr_vector;
-            auto t_lo1 = d2_lo1 * sstr_vector;
+                auto da_mask_lo = abs(d1_lo) < abs(d2_lo);
+                auto da_mask_lo1 = abs(d1_lo1) < abs(d2_lo1);
 
-            auto da_mask_lo = abs(d1_lo) < abs(t_lo);
-            auto da_mask_lo1 = abs(d1_lo1) < abs(t_lo1);
+                auto da_lo = select(da_mask_lo, d1_lo, d2_lo);
+                auto da_lo1 = select(da_mask_lo1, d1_lo1, d2_lo1);
 
-            auto da_lo = select(da_mask_lo, d1_lo, t_lo);
-            auto da_lo1 = select(da_mask_lo1, d1_lo1, t_lo1);
+                auto desired_lo = da_lo * scl_vector;
+                auto desired_lo1 = da_lo1 * scl_vector;
 
-            auto desired_lo = da_lo * scl_vector;
-            auto desired_lo1 = da_lo1 * scl_vector;
+                auto fin_mask_lo = (d1_lo * d2_lo) < 0.0f;
+                auto fin_mask_lo1 = (d1_lo1 * d2_lo1) < 0.0f;
 
-            auto fin_mask_lo = (d1_lo * t_lo) < 0.0f;
-            auto fin_mask_lo1 = (d1_lo1 * t_lo1) < 0.0f;
+                auto add_lo = truncatei(select(fin_mask_lo, desired_lo, da_lo));
+                auto add_lo1 = truncatei(select(fin_mask_lo1, desired_lo1, da_lo1));
 
-            auto add_lo = truncatei(select(fin_mask_lo, desired_lo, da_lo));
-            auto add_lo1 = truncatei(select(fin_mask_lo1, desired_lo1, da_lo1));
+                auto add_l = compress_saturated(add_lo, add_lo1);
+                auto df_l = b6_lo + Vec32us(add_l);
 
-            auto add_l = compress_saturated(add_lo, add_lo1);
-            auto df_l = b3_lo + Vec32us(add_l);
+                auto minm_l = src_lo - amnt_vector;
+                auto maxf_l = src_lo + amnt_vector;
 
-            auto minm_l = src_lo - amnt_vector;
-            auto maxf_l = src_lo + amnt_vector;
+                df_l = max(df_l, minm_l);
+                df_l = min(df_l, maxf_l);
+                //
+                auto b3_hi = extend_high(Vec64uc().load(pb3 + x));
+                auto b6_hi = extend_high(Vec64uc().load(pb6 + x));
+                auto src_hi = extend_high(Vec64uc().load(srcp + x));
 
-            df_l = max(df_l, minm_l);
-            df_l = min(df_l, maxf_l);
-            //
-            auto b3_hi = extend_high(Vec64uc().load(pb3 + x));
-            auto b6_hi = extend_high(Vec64uc().load(pb6 + x));
-            auto src_hi = extend_high(Vec64uc().load(srcp + x));
+                auto d1i_hi = Vec32s(src_hi - b3_hi);
+                auto d2i_hi = Vec32s(src_hi - b6_hi);
 
-            auto d1i_hi = Vec32s(src_hi - b3_hi);
-            auto d2i_hi = Vec32s(b3_hi - b6_hi);
+                auto d1_hi = to_float(extend_low(d1i_hi));
+                auto d1_hi1 = to_float(extend_high(d1i_hi));
 
-            auto d1_hi = to_float(extend_low(d1i_hi));
-            auto d1_hi1 = to_float(extend_high(d1i_hi));
+                auto d2_hi = to_float(extend_low(d2i_hi));
+                auto d2_hi1 = to_float(extend_high(d2i_hi));
 
-            auto d2_hi = to_float(extend_low(d2i_hi));
-            auto d2_hi1 = to_float(extend_high(d2i_hi));
+                auto da_mask_hi = abs(d1_hi) < abs(d2_hi);
+                auto da_mask_hi1 = abs(d1_hi1) < abs(d2_hi1);
 
-            auto t_hi = d2_hi * sstr_vector;
-            auto t_hi1 = d2_hi1 * sstr_vector;
+                auto da_hi = select(da_mask_hi, d1_hi, d2_hi);
+                auto da_hi1 = select(da_mask_hi1, d1_hi1, d2_hi1);
 
-            auto da_mask_hi = abs(d1_hi) < abs(t_hi);
-            auto da_mask_hi1 = abs(d1_hi1) < abs(t_hi1);
+                auto desired_hi = da_hi * scl_vector;
+                auto desired_hi1 = da_hi1 * scl_vector;
 
-            auto da_hi = select(da_mask_hi, d1_hi, t_hi);
-            auto da_hi1 = select(da_mask_hi1, d1_hi1, t_hi1);
+                auto fin_mask_hi = (d1_hi * d2_hi) < 0.0f;
+                auto fin_mask_hi1 = (d1_hi1 * d2_hi1) < 0.0f;
 
-            auto desired_hi = da_hi * scl_vector;
-            auto desired_hi1 = da_hi1 * scl_vector;
+                auto add_hi = truncatei(select(fin_mask_hi, desired_hi, da_hi));
+                auto add_hi1 = truncatei(select(fin_mask_hi1, desired_hi1, da_hi1));
 
-            auto fin_mask_hi = (d1_hi * t_hi) < 0.0f;
-            auto fin_mask_hi1 = (d1_hi1 * t_hi1) < 0.0f;
+                auto add_h = compress_saturated(add_hi, add_hi1);
+                auto df_h = b6_hi + Vec32us(add_h);
 
-            auto add_hi = truncatei(select(fin_mask_hi, desired_hi, da_hi));
-            auto add_hi1 = truncatei(select(fin_mask_hi1, desired_hi1, da_hi1));
+                auto minm_h = src_hi - amnt_vector;
+                auto maxf_h = src_hi + amnt_vector;
 
-            auto add_h = compress_saturated(add_hi, add_hi1);
-            auto df_h = b3_hi + Vec32us(add_h);
+                df_h = max(df_h, minm_h);
+                df_h = min(df_h, maxf_h);
+                //
+                auto result = compress_saturated(df_l, df_h);
+                result.store(dstp + x);
+            }
 
-            auto minm_h = src_hi - amnt_vector;
-            auto maxf_h = src_hi + amnt_vector;
-
-            df_h = max(df_h, minm_h);
-            df_h = min(df_h, maxf_h);
-            //
-            auto result = compress_saturated(df_l, df_h);
-            result.store(dstp + x);
+            srcp += src_pitch;
+            pb3 += pb_pitch;
+            pb6 += clip2_pitch;
+            dstp += dst_pitch;
         }
+    }
+    else
+    {
+        for (int y = 0; y < height; ++y)
+        {
+            for (int x = 0; x < mod64_width; x += 64)
+            {
+                auto b3_lo = extend_low(Vec64uc().load(pb3 + x));
+                auto b6_lo = extend_low(Vec64uc().load(pb6 + x));
+                auto src_lo = extend_low(Vec64uc().load(srcp + x));
 
-        srcp += src_pitch;
-        pb3 += pb_pitch;
-        pb6 += pb_pitch;
-        dstp += dst_pitch;
+                auto d1i_lo = Vec32s(src_lo - b3_lo);
+                auto d2i_lo = Vec32s(b3_lo - b6_lo);
+
+                auto d1_lo = to_float(extend_low(d1i_lo));
+                auto d1_lo1 = to_float(extend_high(d1i_lo));
+
+                auto d2_lo = to_float(extend_low(d2i_lo));
+                auto d2_lo1 = to_float(extend_high(d2i_lo));
+
+                auto t_lo = d2_lo * sstr_vector;
+                auto t_lo1 = d2_lo1 * sstr_vector;
+
+                auto da_mask_lo = abs(d1_lo) < abs(t_lo);
+                auto da_mask_lo1 = abs(d1_lo1) < abs(t_lo1);
+
+                auto da_lo = select(da_mask_lo, d1_lo, t_lo);
+                auto da_lo1 = select(da_mask_lo1, d1_lo1, t_lo1);
+
+                auto desired_lo = da_lo * scl_vector;
+                auto desired_lo1 = da_lo1 * scl_vector;
+
+                auto fin_mask_lo = (d1_lo * t_lo) < 0.0f;
+                auto fin_mask_lo1 = (d1_lo1 * t_lo1) < 0.0f;
+
+                auto add_lo = truncatei(select(fin_mask_lo, desired_lo, da_lo));
+                auto add_lo1 = truncatei(select(fin_mask_lo1, desired_lo1, da_lo1));
+
+                auto add_l = compress_saturated(add_lo, add_lo1);
+                auto df_l = b3_lo + Vec32us(add_l);
+
+                auto minm_l = src_lo - amnt_vector;
+                auto maxf_l = src_lo + amnt_vector;
+
+                df_l = max(df_l, minm_l);
+                df_l = min(df_l, maxf_l);
+                //
+                auto b3_hi = extend_high(Vec64uc().load(pb3 + x));
+                auto b6_hi = extend_high(Vec64uc().load(pb6 + x));
+                auto src_hi = extend_high(Vec64uc().load(srcp + x));
+
+                auto d1i_hi = Vec32s(src_hi - b3_hi);
+                auto d2i_hi = Vec32s(b3_hi - b6_hi);
+
+                auto d1_hi = to_float(extend_low(d1i_hi));
+                auto d1_hi1 = to_float(extend_high(d1i_hi));
+
+                auto d2_hi = to_float(extend_low(d2i_hi));
+                auto d2_hi1 = to_float(extend_high(d2i_hi));
+
+                auto t_hi = d2_hi * sstr_vector;
+                auto t_hi1 = d2_hi1 * sstr_vector;
+
+                auto da_mask_hi = abs(d1_hi) < abs(t_hi);
+                auto da_mask_hi1 = abs(d1_hi1) < abs(t_hi1);
+
+                auto da_hi = select(da_mask_hi, d1_hi, t_hi);
+                auto da_hi1 = select(da_mask_hi1, d1_hi1, t_hi1);
+
+                auto desired_hi = da_hi * scl_vector;
+                auto desired_hi1 = da_hi1 * scl_vector;
+
+                auto fin_mask_hi = (d1_hi * t_hi) < 0.0f;
+                auto fin_mask_hi1 = (d1_hi1 * t_hi1) < 0.0f;
+
+                auto add_hi = truncatei(select(fin_mask_hi, desired_hi, da_hi));
+                auto add_hi1 = truncatei(select(fin_mask_hi1, desired_hi1, da_hi1));
+
+                auto add_h = compress_saturated(add_hi, add_hi1);
+                auto df_h = b3_hi + Vec32us(add_h);
+
+                auto minm_h = src_hi - amnt_vector;
+                auto maxf_h = src_hi + amnt_vector;
+
+                df_h = max(df_h, minm_h);
+                df_h = min(df_h, maxf_h);
+                //
+                auto result = compress_saturated(df_l, df_h);
+                result.store(dstp + x);
+            }
+
+            srcp += src_pitch;
+            pb3 += pb_pitch;
+            pb6 += pb_pitch;
+            dstp += dst_pitch;
+        }
     }
 }
+
+template void finalize_plane_avx512_8<true>(void* __restrict dstp_, const void* srcp_, const void* pb3_, const void* pb6_, float sstr, float scl, int src_pitch, int dst_pitch, int pb_pitch, int clip2_pitch, int width, int height, int amnt) noexcept;
+template void finalize_plane_avx512_8<false>(void* __restrict dstp_, const void* srcp_, const void* pb3_, const void* pb6_, float sstr, float scl, int src_pitch, int dst_pitch, int pb_pitch, int clip2_pitch, int width, int height, int amnt) noexcept;
 
 template <int c_>
 void vertical_blur3_avx512_16(void* __restrict dstp_, const void* srcp_, int dst_pitch, int src_pitch, int width, int height) noexcept
@@ -544,7 +641,8 @@ template void vertical_sbr_avx512_16<32, 2048, 0x800800>(void* __restrict dstp, 
 template void vertical_sbr_avx512_16<128, 8192, 0x20002000>(void* __restrict dstp, void* __restrict tempp, const void* srcp, int dst_pitch, int temp_pitch, int src_pitch, int width, int height) noexcept;
 template void vertical_sbr_avx512_16<512, 32768, 0x80008000>(void* __restrict dstp, void* __restrict tempp, const void* srcp, int dst_pitch, int temp_pitch, int src_pitch, int width, int height) noexcept;
 
-void finalize_plane_avx512_16(void* __restrict dstp_, const void* srcp_, const void* pb3_, const void* pb6_, float sstr, float scl, int src_pitch, int dst_pitch, int pb_pitch, int width, int height, int amnt) noexcept
+template <bool eclip>
+void finalize_plane_avx512_16(void* __restrict dstp_, const void* srcp_, const void* pb3_, const void* pb6_, float sstr, float scl, int src_pitch, int dst_pitch, int pb_pitch, int clip2_pitch, int width, int height, int amnt) noexcept
 {
     const uint16_t* srcp = reinterpret_cast<const uint16_t*>(srcp_);
     const uint16_t* pb3 = reinterpret_cast<const uint16_t*>(pb3_);
@@ -557,69 +655,141 @@ void finalize_plane_avx512_16(void* __restrict dstp_, const void* srcp_, const v
     auto scl_vector = Vec16f(scl);
     auto amnt_vector = Vec16i(amnt);
 
-    for (int y = 0; y < height; ++y)
+    if (eclip)
     {
-        for (int x = 0; x < mod64_width; x += 32)
+        for (int y = 0; y < height; ++y)
         {
-            auto b3_lo = extend_low(Vec32us().load(pb3 + x));
-            auto b6_lo = extend_low(Vec32us().load(pb6 + x));
-            auto src_lo = extend_low(Vec32us().load(srcp + x));
+            for (int x = 0; x < mod64_width; x += 32)
+            {
+                auto b3_lo = extend_low(Vec32us().load(pb3 + x));
+                auto b6_lo = extend_low(Vec32us().load(pb6 + x));
+                auto src_lo = extend_low(Vec32us().load(srcp + x));
 
-            auto d1i_lo = Vec16i(src_lo - b3_lo);
-            auto d2i_lo = Vec16i(b3_lo - b6_lo);
+                auto d1i_lo = Vec16i(src_lo - b3_lo);
+                auto d2i_lo = Vec16i(src_lo - b6_lo);
 
-            auto d1_lo = to_float(d1i_lo);
-            auto d2_lo = to_float(d2i_lo);
+                auto d1_lo = to_float(d1i_lo);
+                auto d2_lo = to_float(d2i_lo);
 
-            auto t_lo = d2_lo * sstr_vector;
-            auto da_mask_lo = abs(d1_lo) < abs(t_lo);
-            auto da_lo = select(da_mask_lo, d1_lo, t_lo);
+                auto da_mask_lo = abs(d1_lo) < abs(d2_lo);
+                auto da_lo = select(da_mask_lo, d1_lo, d2_lo);
 
-            auto desired_lo = da_lo * scl_vector;
-            auto fin_mask_lo = (d1_lo * t_lo) < 0.0f;
+                auto desired_lo = da_lo * scl_vector;
+                auto fin_mask_lo = (d1_lo * d2_lo) < 0.0f;
 
-            auto add_lo = truncatei(select(fin_mask_lo, desired_lo, da_lo));
-            auto df_l = b3_lo + Vec16i(add_lo);
+                auto add_lo = truncatei(select(fin_mask_lo, desired_lo, da_lo));
+                auto df_l = b6_lo + Vec16i(add_lo);
 
-            auto minm_l = src_lo - amnt_vector;
-            auto maxf_l = src_lo + amnt_vector;
+                auto minm_l = src_lo - amnt_vector;
+                auto maxf_l = src_lo + amnt_vector;
 
-            df_l = max(df_l, minm_l);
-            df_l = min(df_l, maxf_l);
-            //
-            auto b3_hi = extend_high(Vec32us().load(pb3 + x));
-            auto b6_hi = extend_high(Vec32us().load(pb6 + x));
-            auto src_hi = extend_high(Vec32us().load(srcp + x));
+                df_l = max(df_l, minm_l);
+                df_l = min(df_l, maxf_l);
+                //
+                auto b3_hi = extend_high(Vec32us().load(pb3 + x));
+                auto b6_hi = extend_high(Vec32us().load(pb6 + x));
+                auto src_hi = extend_high(Vec32us().load(srcp + x));
 
-            auto d1i_hi = Vec16i(src_hi - b3_hi);
-            auto d2i_hi = Vec16i(b3_hi - b6_hi);
+                auto d1i_hi = Vec16i(src_hi - b3_hi);
+                auto d2i_hi = Vec16i(src_hi - b6_hi);
 
-            auto d1_hi = to_float(d1i_hi);
-            auto d2_hi = to_float(d2i_hi);
+                auto d1_hi = to_float(d1i_hi);
+                auto d2_hi = to_float(d2i_hi);
 
-            auto t_hi = d2_hi * sstr_vector;
-            auto da_mask_hi = abs(d1_hi) < abs(t_hi);
-            auto da_hi = select(da_mask_hi, d1_hi, t_hi);
+                auto da_mask_hi = abs(d1_hi) < abs(d2_hi);
+                auto da_hi = select(da_mask_hi, d1_hi, d2_hi);
 
-            auto desired_hi = da_hi * scl_vector;
-            auto fin_mask_hi = (d1_hi * t_hi) < 0.0f;
+                auto desired_hi = da_hi * scl_vector;
+                auto fin_mask_hi = (d1_hi * d2_hi) < 0.0f;
 
-            auto add_hi = truncatei(select(fin_mask_hi, desired_hi, da_hi));
-            auto df_h = b3_hi + Vec16i(add_hi);
+                auto add_hi = truncatei(select(fin_mask_hi, desired_hi, da_hi));
+                auto df_h = b6_hi + Vec16i(add_hi);
 
-            auto minm_h = src_hi - amnt_vector;
-            auto maxf_h = src_hi + amnt_vector;
+                auto minm_h = src_hi - amnt_vector;
+                auto maxf_h = src_hi + amnt_vector;
 
-            df_h = max(df_h, minm_h);
-            df_h = min(df_h, maxf_h);
-            //
-            auto result = compress_saturated_s2u(df_l, df_h);
-            result.store(dstp + x);
+                df_h = max(df_h, minm_h);
+                df_h = min(df_h, maxf_h);
+                //
+                auto result = compress_saturated_s2u(df_l, df_h);
+                result.store(dstp + x);
+            }
+
+            srcp += src_pitch;
+            pb3 += pb_pitch;
+            pb6 += clip2_pitch;
+            dstp += dst_pitch;
         }
+    }
+    else
+    {
+        for (int y = 0; y < height; ++y)
+        {
+            for (int x = 0; x < mod64_width; x += 32)
+            {
+                auto b3_lo = extend_low(Vec32us().load(pb3 + x));
+                auto b6_lo = extend_low(Vec32us().load(pb6 + x));
+                auto src_lo = extend_low(Vec32us().load(srcp + x));
 
-        srcp += src_pitch;
-        pb3 += pb_pitch;
-        pb6 += pb_pitch;
-        dstp += dst_pitch;
+                auto d1i_lo = Vec16i(src_lo - b3_lo);
+                auto d2i_lo = Vec16i(b3_lo - b6_lo);
+
+                auto d1_lo = to_float(d1i_lo);
+                auto d2_lo = to_float(d2i_lo);
+
+                auto t_lo = d2_lo * sstr_vector;
+                auto da_mask_lo = abs(d1_lo) < abs(t_lo);
+                auto da_lo = select(da_mask_lo, d1_lo, t_lo);
+
+                auto desired_lo = da_lo * scl_vector;
+                auto fin_mask_lo = (d1_lo * t_lo) < 0.0f;
+
+                auto add_lo = truncatei(select(fin_mask_lo, desired_lo, da_lo));
+                auto df_l = b3_lo + Vec16i(add_lo);
+
+                auto minm_l = src_lo - amnt_vector;
+                auto maxf_l = src_lo + amnt_vector;
+
+                df_l = max(df_l, minm_l);
+                df_l = min(df_l, maxf_l);
+                //
+                auto b3_hi = extend_high(Vec32us().load(pb3 + x));
+                auto b6_hi = extend_high(Vec32us().load(pb6 + x));
+                auto src_hi = extend_high(Vec32us().load(srcp + x));
+
+                auto d1i_hi = Vec16i(src_hi - b3_hi);
+                auto d2i_hi = Vec16i(b3_hi - b6_hi);
+
+                auto d1_hi = to_float(d1i_hi);
+                auto d2_hi = to_float(d2i_hi);
+
+                auto t_hi = d2_hi * sstr_vector;
+                auto da_mask_hi = abs(d1_hi) < abs(t_hi);
+                auto da_hi = select(da_mask_hi, d1_hi, t_hi);
+
+                auto desired_hi = da_hi * scl_vector;
+                auto fin_mask_hi = (d1_hi * t_hi) < 0.0f;
+
+                auto add_hi = truncatei(select(fin_mask_hi, desired_hi, da_hi));
+                auto df_h = b3_hi + Vec16i(add_hi);
+
+                auto minm_h = src_hi - amnt_vector;
+                auto maxf_h = src_hi + amnt_vector;
+
+                df_h = max(df_h, minm_h);
+                df_h = min(df_h, maxf_h);
+                //
+                auto result = compress_saturated_s2u(df_l, df_h);
+                result.store(dstp + x);
+            }
+
+            srcp += src_pitch;
+            pb3 += pb_pitch;
+            pb6 += pb_pitch;
+            dstp += dst_pitch;
+        }
     }
 }
+
+template void finalize_plane_avx512_16<true>(void* __restrict dstp_, const void* srcp_, const void* pb3_, const void* pb6_, float sstr, float scl, int src_pitch, int dst_pitch, int pb_pitch, int clip2_pitch, int width, int height, int amnt) noexcept;
+template void finalize_plane_avx512_16<false>(void* __restrict dstp_, const void* srcp_, const void* pb3_, const void* pb6_, float sstr, float scl, int src_pitch, int dst_pitch, int pb_pitch, int clip2_pitch, int width, int height, int amnt) noexcept;

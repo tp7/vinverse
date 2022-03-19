@@ -13,7 +13,7 @@ This plugin also includes a fast implementation of [Vinverse2 function](https://
 ### Usage:
 
 ```
-vinverse (clip input, float "sstr", int "amnt", int "uv", float "scl", int "opt")
+vinverse (clip input, float "sstr", int "amnt", int "uv", float "scl", int "opt", clip "clip2")
 ```
 ```
 vinverse2 (clip input, float "sstr", int "amnt", int "uv", float "scl", int "opt")
@@ -53,6 +53,9 @@ vinverse2 (clip input, float "sstr", int "amnt", int "uv", float "scl", int "opt
     3: Use AVX512 code.\
     Default: -1.
 
+- clip2\
+    External clip from which to take contra sharpening.\
+    This clip must be the same length, width, height, and colorspace as the input clip.
 
 ### Building:
 
