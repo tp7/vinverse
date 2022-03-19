@@ -53,7 +53,7 @@ vinverse2 (clip input, float "sstr", int "amnt", int "uv", float "scl", int "opt
     3: Use AVX512 code.\
     Default: -1.
 
-- clip2\
+- clip2 (vinverse only)\
     External clip from which to take contra sharpening.\
     This clip must be the same length, width, height, and colorspace as the input clip.
 
